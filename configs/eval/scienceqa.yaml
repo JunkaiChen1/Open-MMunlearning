@@ -1,0 +1,19 @@
+# @package eval.scienceqa
+
+handler: MultimodalBenchmarkEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+name: ScienceQA-val
+benchmark: scienceqa
+format: json
+data_path: ${paths.data_dir}/eval/scienceqa/problems.json
+image_root: ${paths.data_dir}/eval/scienceqa/images
+split: val
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+model_family: null
+prompt_style: auto
+generation_args:
+  max_new_tokens: 8
+  do_sample: false
+max_samples: null
+sample_seed: null

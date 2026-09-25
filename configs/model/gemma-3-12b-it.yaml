@@ -1,0 +1,14 @@
+model_handler: Gemma3ForConditionalGeneration
+model_args:
+  pretrained_model_name_or_path: "google/gemma-3-12b-it"
+  attn_implementation: eager
+  torch_dtype: bfloat16
+tokenizer_args:
+  pretrained_model_name_or_path: "google/gemma-3-12b-it"
+template_args:
+  apply_chat_template: true
+  system_prompt: ""
+  user_start_tag: "<bos><start_of_turn>user\n"
+  user_end_tag: "<end_of_turn>\n"
+  asst_start_tag: "<start_of_turn>model\n"
+  asst_end_tag: "<end_of_turn>\n"

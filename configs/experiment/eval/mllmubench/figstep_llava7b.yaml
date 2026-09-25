@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /model: LLaVA_Vanilla_7b
+  - override /eval: figstep
+
+ratio: 10
+eval:
+  figstep:
+    ratio: ${ratio}
+    split: forget
+
+task_name: figstep_llava7b_mllmu

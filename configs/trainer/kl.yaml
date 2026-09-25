@@ -1,0 +1,7 @@
+defaults:
+  - finetune
+
+handler: kl
+method_args:
+  gamma: 1.0
+  alpha: 1.0

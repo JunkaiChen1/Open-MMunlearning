@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /model: LLaVA_Vanilla_7b
+  - override /eval: jailbreak
+
+ratio: 10
+eval:
+  jailbreak:
+    ratio: ${ratio}
+    split: forget
+
+task_name: jailbreak_llava7b_mllmu

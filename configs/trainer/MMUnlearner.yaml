@@ -1,0 +1,17 @@
+defaults:
+  - GradDiff
+
+handler: MMUnlearner
+method_args:
+  gamma: 1.0
+  alpha: 1.0
+  retain_loss_type: NLL
+  saliency_threshold: 1.0
+  saliency_epsilon: 1.0e-15
+  mask_num_batches: null
+  preserve_forget_text: true
+  preserve_retain_text: true
+  preserve_retain: true
+  preserve_retain_view: multimodal
+  mask_path: null
+  mask_save_path: null

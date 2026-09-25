@@ -1,0 +1,25 @@
+# @package eval.jailbreak
+
+handler: JailbreakAttackEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+
+data_root: ${paths.data_dir}/eval/mllmu
+split: forget
+ratio: 10
+retain_ratio: 90
+data_path: null
+image_strategy: all
+# MLLMU Mask_Task contains both multimodal and pure-text forget probes.
+task_types:
+  - Image_Textual
+  - Pure_Text
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+
+jailbreak:
+  variants:
+    - prefix_injection
+    - affirmative_suffix
+    - role_playing
+  prompt_style: raw
+  max_new_tokens: 80

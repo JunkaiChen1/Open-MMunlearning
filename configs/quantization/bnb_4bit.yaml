@@ -1,0 +1,9 @@
+# Reusable reference values for the open-mmunlearning quantization stress test.
+# Add these fields below a model config as `model.quantization`, or use
+# scripts/quantization_stress_test.py which injects them automatically.
+enabled: true
+bits: 4
+quant_type: nf4
+compute_dtype: bfloat16
+use_double_quant: true
+device_map: auto

@@ -1,0 +1,17 @@
+model_handler: ProbedLlavaNextForConditionalGeneration
+model_args:
+  pretrained_model_name_or_path: "llava-hf/llava-v1.6-vicuna-13b-hf"
+  torch_dtype: float16
+  n_layers: 20
+  freeze_base_model: true
+  head_pretrained_model_name_or_path: null
+tokenizer_args:
+  pretrained_model_name_or_path: "llava-hf/llava-v1.6-vicuna-13b-hf"
+  model_max_length: 4096
+template_args:
+  apply_chat_template: true
+  system_prompt: ""
+  user_start_tag: "USER: "
+  user_end_tag: " "
+  asst_start_tag: "ASSISTANT: "
+  asst_end_tag: " "

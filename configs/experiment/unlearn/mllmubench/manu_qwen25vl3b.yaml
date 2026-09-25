@@ -1,0 +1,22 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/mllmubench/default
+  - override /model: Qwen2.5-VL-3B-Instruct
+  - override /trainer: MANU
+  - override /peft: none
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      include_text_only: true
+
+trainer:
+  args:
+    gradient_checkpointing: false
+    do_eval: false
+    eval_on_start: false
+    eval_strategy: "no"
+    num_train_epochs: 1
+
+task_name: manu_qwen25vl3b

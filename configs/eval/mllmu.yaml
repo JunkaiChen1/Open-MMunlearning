@@ -1,0 +1,78 @@
+# @package eval.mllmu
+
+handler: MLLMUBenchEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+
+# Original MLLMU-Bench parquet layout.
+data_root: ${paths.data_dir}/eval/mllmu
+ratio: 5
+forget_ratio: ${eval.mllmu.ratio}
+forget_path: null
+retain_path: null
+test_path: ${eval.mllmu.data_root}/Test_Set
+celebrity_path: ${eval.mllmu.data_root}/Retain_Set/train-00000-of-00001.parquet
+few_shot_path: ${eval.mllmu.data_root}/Full_Set/train-00000-of-00001.parquet
+# Keep the source MLLMU few-shot protocol by default. Set false for
+# context-constrained models or evaluations that should use zero demonstrations.
+use_few_shot: true
+retain_ratio: null
+
+# Processor path normally matches the model tokenizer path.
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+model_family: null
+system_prompt: ${oc.select:model.template_args.system_prompt,null}
+
+# `auto` uses the source MLLMU raw prompt for LLaVA/Idefics2 and chat
+# templates for later model families that are not supported by the source repo.
+prompt_style: auto
+# Enables the literal MLLMU decoding/task-order compatibility path for the
+# source-supported LLaVA and Idefics model families.
+upstream_compatibility: true
+choice_parse_strategy: first_char
+test_image_strategy: random
+seed: ${seed}
+
+splits:
+  - forget
+  - test
+  - retain_shared
+  - retain_celebrity
+
+tasks:
+  - fill_in_the_blank
+  - classification
+  - generation
+
+generation_args:
+  max_new_tokens: 50
+  do_sample: false
+
+# Adds one teacher-forced forward pass per generation question. Positive loss
+# is the shared LOSS/ZLIB MIA convention.
+generation_answer_probability: true
+generation_mia: true
+generation_mia_sign: 1.0
+# Standard Min-K attacks use max(1, floor(20% * answer tokens)).
+generation_mia_min_k: true
+generation_mia_min_k_ratio: 0.2
+
+# Truth Ratio uses the GPT-generated positive/negative answer sidecar. The
+# forget/test distributions are compared with retain_shared for KS and JS.
+generation_truth_ratio: true
+generation_truth_ratio_path: ${eval.mllmu.data_root}/truth_ratio/full_set_generation_variants.jsonl
+generation_distribution_reference_split: retain_shared
+generation_js_bins: 50
+
+few_shot:
+  classification:
+    default: 1
+  fill_in_the_blank:
+    default: 2
+    idefics: 1
+  generation:
+    default: 0
+
+save_task_details: true
+save_generation_details: true
+max_samples_per_split: null

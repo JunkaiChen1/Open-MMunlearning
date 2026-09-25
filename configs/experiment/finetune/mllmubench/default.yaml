@@ -1,0 +1,47 @@
+# @package _global_
+
+defaults:
+  - override /model: llava-1.5-7b-hf
+  - override /trainer: finetune
+  - override /data: finetune
+  - override /data/datasets@data.train: MLLMU_QA_ft
+  - override /collator: DataCollatorForMultimodalQADataset
+  - override /peft: lora
+  - override /eval: null
+
+mode: finetune
+
+mllmu_ft_data_path: ${paths.data_dir}/finetune/mllmu/train-00000-of-00001.parquet
+
+data:
+  train:
+    MLLMU_QA_ft:
+      args:
+        hf_args:
+          data_files: ${mllmu_ft_data_path}
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+      # LLaVA-1.5 expands one 336px image to 576 image tokens in current
+      # Transformers; 384 would truncate those tokens and break the forward pass.
+      max_length: 768
+      system_prompt: ${model.template_args.system_prompt}
+      image_max_pixels: 200704
+      padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+trainer:
+  args:
+    per_device_train_batch_size: 4
+    gradient_accumulation_steps: 1
+    learning_rate: 2e-5
+    weight_decay: 0.0
+    warmup_epochs: 0
+    num_train_epochs: 4
+    gradient_checkpointing: false
+    optim: adamw_torch
+    ddp_find_unused_parameters: true
+    remove_unused_columns: false
+
+task_name: ???

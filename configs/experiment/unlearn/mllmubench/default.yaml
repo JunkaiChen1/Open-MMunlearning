@@ -1,0 +1,77 @@
+# @package _global_
+
+defaults:
+  - override /model: Qwen2.5-VL-3B-Instruct
+  - override /trainer: GradAscent
+  - override /data: unlearn
+  - override /data/datasets@data.forget: MLLMU_QA_forget
+  - override /data/datasets@data.retain: MLLMU_QA_retain
+  - override /collator: DataCollatorForMultimodalQADataset
+  - override /peft: lora
+  - override /eval: null
+
+mode: unlearn
+
+mllmu_data_dir: ${paths.data_dir}/unlearn/mllmu
+forget_split: forget_10
+retain_split: retain_90
+
+data:
+  anchor: forget
+  forget:
+    MLLMU_QA_forget:
+      args:
+        qa_pairs_key: metadata
+        hf_args:
+          data_files: ${mllmu_data_dir}/${forget_split}/train-00000-of-00001.parquet
+  retain:
+    MLLMU_QA_retain:
+      args:
+        qa_pairs_key: metadata
+        hf_args:
+          data_files: ${mllmu_data_dir}/${retain_split}/train-00000-of-00001.parquet
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+      max_length: ${oc.select:model.tokenizer_args.model_max_length,2048}
+      system_prompt: ${model.template_args.system_prompt}
+      image_max_pixels: 200704
+      padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+trainer:
+  args:
+    warmup_epochs: 0
+    warmup_steps: 0
+    learning_rate: 2e-5
+    weight_decay: 0.0
+    num_train_epochs: 1
+    per_device_train_batch_size: 4
+    gradient_accumulation_steps: 1
+    gradient_checkpointing: true
+    ddp_find_unused_parameters: true
+    remove_unused_columns: false
+    optim: adamw_torch
+    overwrite_output_dir: true
+    dataloader_num_workers: 4
+    dataloader_prefetch_factor: 2
+    do_eval: false
+    eval_strategy: "no"
+    eval_on_start: false
+    save_strategy: "no"
+    report_to: none
+  # MLLMU-Bench's paper setting is beta=0.9. Search trials override this
+  # around the paper value; keep the base configuration paper-aligned.
+  method_args_by_handler:
+    NPO:
+      beta: 0.9
+
+peft:
+  r: 16
+  lora_alpha: 16
+  lora_dropout: 0.05
+  module_preset: all
+
+eval: null
+task_name: ???

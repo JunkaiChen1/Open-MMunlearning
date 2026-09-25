@@ -1,0 +1,19 @@
+# @package eval.vqav2
+
+handler: MultimodalBenchmarkEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+name: VQAv2-val2014
+benchmark: vqav2
+format: json
+data_path: ${paths.data_dir}/eval/vqav2/questions/v2_OpenEnded_mscoco_val2014_questions.json
+annotations_path: ${paths.data_dir}/eval/vqav2/annotations/v2_mscoco_val2014_annotations.json
+image_root: ${paths.data_dir}/eval/vqav2/images
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+model_family: null
+prompt_style: auto
+generation_args:
+  max_new_tokens: 16
+  do_sample: false
+max_samples: null
+sample_seed: null

@@ -1,0 +1,16 @@
+defaults:
+  - GradDiff
+
+handler: RMU
+method_args:
+  # The params here are more dependent on model and dataset. Tune them carefully to work
+  gamma: 1.0
+  steering_coeff: 2
+  retain_loss_type: EMBED_DIFF
+  alpha: 1
+  module_regex:
+    - base_model\.model\.language_model\.model\.layers\.7
+    - base_model\.model\.model\.layers\.7
+    - language_model\.model\.layers\.7
+    - model\.layers\.7
+  trainable_params_regex: null

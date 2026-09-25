@@ -1,0 +1,9 @@
+defaults:
+  - finetune
+
+handler: UNDIAL
+method_args:
+  gamma: 1.0
+  alpha: 0.0
+  beta: 10.0
+  retain_loss_type: NLL
