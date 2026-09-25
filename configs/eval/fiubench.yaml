@@ -1,0 +1,90 @@
+# @package eval.fiubench
+
+handler: FIUBenchEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+
+# Original FIUBench JSONL layout copied under this directory. The upstream
+# split is kept separately because the local unlearning-preparation split uses
+# a different ratio convention.
+data_root: ${paths.data_dir}/eval/fiubench
+data_path:
+  - ${eval.fiubench.data_root}/full.json
+  - ${eval.fiubench.data_root}/full.json
+split_path: ${eval.fiubench.data_root}/upstream_split.json
+image_root: ${eval.fiubench.data_root}
+
+# Processor path normally matches the model tokenizer path.
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+model_family: null
+system_prompt: ${oc.select:model.template_args.system_prompt,null}
+padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+# auto: LLaVA uses the original raw FIUBench/LLaVA prompt; Qwen/Gemma use chat templates.
+prompt_style: auto
+raw_system_prompt: "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. "
+question_start_tag: "USER: "
+answer_tag: " ASSISTANT: "
+image_token: "<image>"
+
+# The upstream evaluator selects explicit entries from split.json. `retain5`
+# is not a generated complement of `forget5`.
+ratio: 5
+forget_split: forget${eval.fiubench.ratio}
+retain_split: retain${eval.fiubench.ratio}
+split_list:
+  - ${eval.fiubench.forget_split}
+  - ${eval.fiubench.retain_split}
+question_key:
+  - question
+  - question
+robust_question_key:
+  - paraphrased_question
+  - question
+answer_key:
+  - answer
+  - answer
+base_answer_key:
+  - paraphrased_answer
+  - paraphrased_answer
+perturbed_answer_key:
+  - perturbed_answer
+  - perturbed_answer
+eval_task:
+  - eval_forget_log
+  - eval_retain_log
+robust_eval:
+  - [exact, match, ape]
+  - [rouge]
+
+generation_args:
+  max_new_tokens: 50
+  do_sample: false
+
+max_length: null
+max_people: 400
+max_samples_per_split: null
+image_max_pixels: null
+cache_images: true
+capitalize_text: true
+# The source dataset loader does not substitute missing robust questions or
+# paraphrased answers with the original field.
+fallback_empty_question_to_question: false
+fallback_empty_answer_to_answer: false
+truncate_generation_at_period: true
+empty_generation_without_period: true
+save_generated_text: true
+
+# FIUBench's original get_all_evals returns only APE exact-match when `ape` is present.
+ape_only: true
+normalize_gt: null
+enable_gpt: false
+
+# Use the source LLaVA tokenizer/CLIP path and source `preprocess_v1` label
+# masking for the upstream LLaVA-Phi model. Standard Hugging Face LLaVA
+# models use their processor so the image placeholder expands to the model's
+# configured patch-token count.
+upstream_compatibility: true
+upstream_llava_io: null
+allow_generated_retain_split: false
+retain_result: null

@@ -1,0 +1,32 @@
+# @package eval.sua
+
+handler: SUAAttackEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+refit: false
+
+data_root: ${paths.data_dir}/eval/mllmu
+split: forget
+ratio: 5
+retain_ratio: 90
+data_path: null
+# Use ``all`` to match the official SUA script, or ``first`` for a cheaper
+# smoke test. ``test`` uses the MLLMU Test_Set image candidates.
+image_strategy: all
+max_records: null
+
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+
+sua:
+  iterations: 500
+  alpha: 0.0039215686
+  epsilon: 0.0470588235
+  batch_size: 6
+  denoise_weight: 0.7
+  image_size: 336
+  save_every: 20
+  max_samples: null
+  seed: ${seed}
+  prompt_style: raw
+  denoiser_path: null
+  checkpoint_path: ${eval.sua.output_dir}/checkpoint/sua_perturbation.pt

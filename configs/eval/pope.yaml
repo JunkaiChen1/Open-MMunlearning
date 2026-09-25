@@ -1,0 +1,18 @@
+# @package eval.pope
+
+handler: MultimodalBenchmarkEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+name: POPE
+benchmark: pope
+format: jsonl
+data_path: ${paths.data_dir}/eval/pope/coco_pope_random.json
+image_root: ${paths.data_dir}/eval/pope/images
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+model_family: null
+prompt_style: auto
+generation_args:
+  max_new_tokens: 5
+  do_sample: false
+max_samples: null
+sample_seed: null

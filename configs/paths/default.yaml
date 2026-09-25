@@ -1,0 +1,20 @@
+# Project root and external resources are configurable so this repository can
+# be checked out independently of any dataset or model storage location.
+root_dir: ${oc.env:OPEN_UNLEARNING_ROOT,${hydra:runtime.cwd}}
+
+# Keep datasets and downloaded checkpoints outside the source tree by default.
+data_dir: ${oc.env:OPEN_UNLEARNING_DATA_DIR,${paths.root_dir}/data}
+model_dir: ${oc.env:OPEN_UNLEARNING_MODEL_DIR,${paths.root_dir}/models}
+
+# path to dataset configs
+datasets: ${paths.root_dir}/configs/data/datasets
+
+# path to output directory, created dynamically by hydra
+# path generation pattern is specified in `configs/hydra/default.yaml`
+# use it to store all files generated during the run, like ckpts and metrics
+# save_dir: ${paths.root_dir}/saves/${mode}/${task_name}
+
+output_dir: ${paths.root_dir}/saves/${mode}/${task_name}
+
+# path to working directory
+work_dir: ${hydra:runtime.cwd}

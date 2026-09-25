@@ -1,0 +1,47 @@
+# @package eval.image_rephrase
+
+handler: ImageRephraseAttackEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+
+data_root: ${paths.data_dir}/eval/mllmu
+split: test
+ratio: 10
+retain_ratio: 90
+data_path: null
+# Test_Set supplies new images/questions for the forget IDs.
+reference_ids_path: ${eval.image_rephrase.data_root}/forget_10/train-00000-of-00001.parquet
+image_strategy: all
+max_records: null
+
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+
+image_rephrase:
+  # ``regenerate`` is opt-in because it needs precomputed generated images or
+  # a user-supplied callback. The other variants are model-free.
+  variants:
+    - noise
+    - brightness
+    - contrast
+    - resize
+    - crop
+    - blur
+    - occlusion
+    - remove_irrelevant
+  seed: ${seed}
+  noise_sigma: 0.02
+  brightness_factor: 0.85
+  contrast_factor: 0.85
+  resize_scale: 0.85
+  crop_ratio: 0.90
+  rephrase_blur_radius: 2.0
+  occlusion_ratio: 0.18
+  occlusion_fill: mean
+  remove_region: [0.0, 0.0, 0.32, 0.32]
+  remove_fill: blur
+  blur_radius: 14.0
+  regeneration_dir: null
+  save_images: true
+  artifacts_dir: null
+  prompt_style: raw
+  max_new_tokens: 80

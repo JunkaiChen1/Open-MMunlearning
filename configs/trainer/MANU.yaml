@@ -1,0 +1,27 @@
+defaults:
+  - finetune
+
+handler: MANU
+method_args:
+  prune_percent: 10.0
+  num_iterations: 1
+  activation_num_batches: null
+  activation_threshold: 0.1
+  epsilon: 1.0e-5
+  all_layers: false
+  vision_layers: [-3, -2, -1]
+  language_layers: [-3, -2, -1]
+  validate_after_pruning: false
+  source_adapter_path: ${oc.select:model.adapter_path,null}
+
+args:
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 1
+  gradient_checkpointing: false
+  remove_unused_columns: false
+  do_train: true
+  do_eval: false
+  eval_on_start: false
+  eval_strategy: "no"
+  save_strategy: "no"
+  num_train_epochs: 1

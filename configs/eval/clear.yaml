@@ -1,0 +1,173 @@
+# @package eval.clear
+
+handler: CLEAREvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+
+# Full CLEAR eval data should be prepared under the configured data directory.
+data_root: ${paths.data_dir}/eval/clear
+forget_ratio: "10"
+forget_split: forget${eval.clear.forget_ratio}_perturbed
+retain_perturbed_split: retain_perturbed
+real_faces_path: ${eval.clear.data_root}/real_faces/train-00000-of-00001.parquet
+real_world_path: ${eval.clear.data_root}/real_world/train-00000-of-00001.parquet
+forget_perturbed_path: ${eval.clear.data_root}/${eval.clear.forget_split}/train-00000-of-00001.parquet
+retain_perturbed_path: ${eval.clear.data_root}/${eval.clear.retain_perturbed_split}/train-00000-of-00001.parquet
+image_root: ${eval.clear.data_root}
+
+# Processor path normally matches the model tokenizer path.
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+# Keep remote dataset code disabled by default. Enable only for a trusted
+# dataset revision that explicitly requires it.
+dataset_trust_remote_code: false
+model_family: null
+system_prompt: ${oc.select:model.template_args.system_prompt,null}
+# CLEAR/mm/eval.py unconditionally uses left padding for its processor.
+padding_side: left
+
+# auto: LLaVA uses the raw prompt; Qwen/Gemma use chat templates. The
+# upstream CLEAR default is Qwen-VL and therefore uses its chat template.
+prompt_style: auto
+raw_system_prompt: "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. "
+question_start_tag: "USER: "
+answer_tag: " ASSISTANT: "
+image_token: "<image>"
+
+metadata_key: metadata
+metadata_question_key: Question
+metadata_answer_key: Answer
+image_key: image
+id_key: ID
+name_key: name
+face_question: "The name of the person on the image is "
+
+generation_args:
+  max_new_tokens: 300
+  do_sample: false
+
+# Loss/ZLIB MIA on the teacher-forced ground-truth answer. Positive scores
+# match the shared MIA convention; FIUBench keeps its source-specific -1 sign.
+generation_mia: true
+generation_mia_sign: 1.0
+# Standard Min-K attacks use the lowest 20% of teacher-forced answer tokens.
+# FIUBench's five-ratio weighted protocol is intentionally configured elsewhere.
+generation_mia_min_k: true
+generation_mia_min_k_ratio: 0.2
+
+max_length: 4096
+max_samples_per_task: 300
+image_max_pixels: null
+cache_images: true
+save_generated_text: true
+truncate_generation_at_period: false
+capitalize_text: false
+processor_do_pad: true
+
+# Source-protocol compatibility. CLEAR's evaluator masks labels using the
+# formatted-question token count, aligns expanded image logits, and performs
+# generation from the decoded text-only question input.
+upstream_compatibility: true
+upstream_text_only_generation: true
+include_extended_group_metrics: false
+
+# The full CLEAR eval splits already contain options / perturbed captions /
+# perturbed names, so automatic negative sampling is disabled by default.
+auto_perturbations: false
+num_auto_perturbations: 5
+js_bins: 50
+seed: ${seed}
+retain_result: null
+eval_task_ids: null
+
+# QA-only evaluation from CLEAR's +tofu mixed splits. The source files live
+# outside the prepared image-eval directory; override this path or
+# set pure_text_eval=false for another checkout.
+pure_text_eval: true
+pure_text_data_root: ${paths.data_dir}/external/clear
+# Set either path explicitly to override ratio-based split discovery.
+pure_text_forget_path: null
+pure_text_retain_path: null
+pure_text_max_samples: 300
+
+task_specs:
+  - eval_task: eval_real_faces_wo_options
+    split: real_faces
+    data_path: ${eval.clear.real_faces_path}
+    question_strategy: random_faces
+    question_key: question
+    answer_key: answer
+    base_answer_key: answer
+    perturbed_answer_key: options
+    category: Real Faces
+
+  - eval_task: eval_real_world_wo_options
+    split: real_world
+    data_path: ${eval.clear.real_world_path}
+    question_strategy: column
+    question_key: question
+    answer_key: answer
+    base_answer_key: answer
+    perturbed_answer_key: options
+    category: Real World
+
+  - eval_task: eval_log_forget
+    split: ${eval.clear.forget_split}
+    data_path: ${eval.clear.forget_perturbed_path}
+    question_strategy: random_caption
+    question_key: question
+    answer_key: caption
+    base_answer_key: paraphrased_caption
+    perturbed_answer_key: perturbed_captions
+    category: Forget
+
+  - eval_task: eval_log
+    split: ${eval.clear.retain_perturbed_split}
+    data_path: ${eval.clear.retain_perturbed_path}
+    question_strategy: random_caption
+    question_key: question
+    answer_key: caption
+    base_answer_key: paraphrased_caption
+    perturbed_answer_key: perturbed_captions
+    category: Retain
+
+  - eval_task: eval_forget_facerec
+    split: ${eval.clear.forget_split}
+    data_path: ${eval.clear.forget_perturbed_path}
+    question_strategy: random_faces
+    answer_key: name
+    base_answer_key: name
+    perturbed_answer_key: perturbed_names
+    category: Forget FaceRec
+
+  - eval_task: eval_retain_facerec
+    split: ${eval.clear.retain_perturbed_split}
+    data_path: ${eval.clear.retain_perturbed_path}
+    question_strategy: random_faces
+    answer_key: name
+    base_answer_key: name
+    perturbed_answer_key: perturbed_names
+    category: Retain FaceRec
+
+  - eval_task: eval_text_forget
+    enabled: ${eval.clear.pure_text_eval}
+    pure_text_partition: forget
+    split: null
+    data_path: ${eval.clear.pure_text_forget_path}
+    image_mode: text
+    question_strategy: column
+    question_key: question
+    answer_key: answer
+    category: Pure Text Forget
+    max_samples: ${eval.clear.pure_text_max_samples}
+
+  - eval_task: eval_text_retain
+    enabled: ${eval.clear.pure_text_eval}
+    pure_text_partition: retain
+    split: null
+    data_path: ${eval.clear.pure_text_retain_path}
+    image_mode: text
+    question_strategy: column
+    question_key: question
+    answer_key: answer
+    category: Pure Text Retain
+    max_samples: ${eval.clear.pure_text_max_samples}

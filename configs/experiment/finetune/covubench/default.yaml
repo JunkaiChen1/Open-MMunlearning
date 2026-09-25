@@ -1,0 +1,52 @@
+# @package _global_
+
+defaults:
+  - override /model: llava-1.5-7b-hf
+  - override /trainer: finetune
+  - override /data: finetune
+  - override /data/datasets@data.train: COVUBENCH_QA_ft
+  - override /collator: DataCollatorForMultimodalQADataset
+  - override /peft: lora
+  - override /eval: null
+
+mode: finetune
+
+covubench_data_path: ${paths.data_dir}/finetune/covubench/train-*.parquet
+
+data:
+  train:
+    COVUBENCH_QA_ft:
+      args:
+        hf_args:
+          data_files: ${covubench_data_path}
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+      max_length: ${oc.select:model.tokenizer_args.model_max_length,2048}
+      system_prompt: ${model.template_args.system_prompt}
+      image_max_pixels: 200704
+      padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+trainer:
+  args:
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 4
+    learning_rate: 5e-4
+    weight_decay: 0.01
+    warmup_epochs: 1.0
+    num_train_epochs: 7
+    optim: adamw_torch
+    dataloader_num_workers: 4
+    dataloader_prefetch_factor: 2
+    remove_unused_columns: false
+    do_eval: false
+    eval_strategy: "no"
+    eval_on_start: false
+
+peft:
+  r: 64
+  lora_alpha: 128
+
+task_name: covubench_llava_ft

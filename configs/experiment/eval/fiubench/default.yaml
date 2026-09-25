@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /model: Qwen2.5-VL-3B-Instruct
+  - override /eval: fiubench
+
+ratio: 5
+
+eval:
+  fiubench:
+    ratio: ${ratio}
+
+task_name: fiubench_eval

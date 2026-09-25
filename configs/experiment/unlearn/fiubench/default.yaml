@@ -1,0 +1,69 @@
+# @package _global_
+
+defaults:
+  - override /model: llava-1.5-7b-hf
+  - override /trainer: GradAscent
+  - override /data: unlearn
+  - override /data/datasets@data.forget: FIUBENCH_QA_forget
+  - override /data/datasets@data.retain: FIUBENCH_QA_retain
+  - override /collator: DataCollatorForMultimodalQADataset
+  - override /peft: lora
+  - override /eval: null
+
+mode: unlearn
+
+fiubench_data_dir: ${paths.data_dir}/unlearn/fiubench
+forget_split: forget_10
+retain_split: retain_90
+
+data:
+  anchor: forget
+  forget:
+    FIUBENCH_QA_forget:
+      args:
+        hf_args:
+          data_files: ${fiubench_data_dir}/${forget_split}/train-00000-of-00001.parquet
+  retain:
+    FIUBENCH_QA_retain:
+      args:
+        hf_args:
+          data_files: ${fiubench_data_dir}/${retain_split}/train-00000-of-00001.parquet
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+      max_length: ${oc.select:model.tokenizer_args.model_max_length,2048}
+      system_prompt: ${model.template_args.system_prompt}
+      image_max_pixels: 200704
+      padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+trainer:
+  args:
+    learning_rate: 1e-5
+    weight_decay: 0.01
+    warmup_epochs: 1.0
+    num_train_epochs: 5
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 4
+    gradient_checkpointing: true
+    ddp_find_unused_parameters: true
+    remove_unused_columns: false
+    do_eval: false
+    eval_strategy: "no"
+    eval_on_start: false
+    save_strategy: "no"
+    report_to: none
+    optim: paged_adamw_32bit
+    overwrite_output_dir: true
+    dataloader_num_workers: 4
+    dataloader_prefetch_factor: 2
+
+peft:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  module_preset: all
+
+eval: null
+task_name: fiubench_unlearn_default

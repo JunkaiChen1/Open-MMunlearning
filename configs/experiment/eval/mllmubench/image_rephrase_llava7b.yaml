@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /model: LLaVA_Vanilla_7b
+  - override /eval: image_rephrase
+
+ratio: 10
+eval:
+  image_rephrase:
+    ratio: ${ratio}
+    max_records: 48
+
+task_name: image_rephrase_llava7b_mllmu

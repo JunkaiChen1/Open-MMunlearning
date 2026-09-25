@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /model: Qwen2.5-VL-3B-Instruct
+  - override /eval: clear
+
+forget_ratio: "10"
+
+eval:
+  clear:
+    forget_ratio: ${forget_ratio}
+
+task_name: clear_eval

@@ -1,0 +1,9 @@
+DataCollatorForMultimodalQADataset:
+  handler: DataCollatorForMultimodalQADataset
+  args:
+    processor_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+    max_length: 2048
+    padding: true
+    truncation: true
+    system_prompt: "You are a helpful assistant."
+    image_max_pixels: 200704

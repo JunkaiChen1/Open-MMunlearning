@@ -1,0 +1,12 @@
+defaults:
+  - GradDiff
+
+handler: MIPEditor
+method_args:
+  path_topk: 5
+  path_num_batches: 4
+  path_layers: []
+  steering_coeff: 1.0
+  retain_alpha: 0.5
+  forget_beta: 0.5
+  control_coeff: 10.0

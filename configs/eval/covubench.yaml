@@ -1,0 +1,56 @@
+# @package eval.covubench
+
+handler: CoVUBenchEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+
+# Evaluation-only copy of the original public CoVUBench parquet release.
+data_root: ${paths.data_dir}/eval/covubench
+ratio: 5
+forget_pattern: "forget${eval.covubench.ratio}-*.parquet"
+test_pattern: "test-*.parquet"
+retain_pattern: "retain-*.parquet"
+
+# D_test contains all concepts, while the benchmark evaluates only concepts in
+# D_forget. D_retain' similarly contains only non-blocklisted concepts.
+filter_by_forget_concepts: true
+
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+processor_trust_remote_code: false
+model_family: null
+system_prompt: ${oc.select:model.template_args.system_prompt,null}
+padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+# auto uses the released LLaVA prompt for LLaVA and the processor chat template
+# for Qwen-family models.
+prompt_style: auto
+raw_system_prompt: "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. "
+question_start_tag: "USER: "
+answer_tag: " ASSISTANT: "
+image_token: "<image>"
+image_question_types:
+  - multi_modal
+  - caption
+
+generation_args:
+  max_new_tokens: 256
+  do_sample: false
+
+max_length: null
+truncation: true
+max_samples_per_split: null
+image_max_pixels: 200704
+parquet_batch_size: 8
+checkpoint_interval: 10
+save_prompts: false
+
+# all-MiniLM-L6-v2 is run with the SentenceTransformers mean-pooling recipe.
+# CPU is intentional so it does not compete with the evaluated VLM for VRAM.
+embedding_model_path: sentence-transformers/all-MiniLM-L6-v2
+embedding_device: cpu
+embedding_batch_size: 32
+embedding_max_length: 256
+embedding_local_files_only: true
+embedding_trust_remote_code: false
+
+rouge_use_stemmer: true

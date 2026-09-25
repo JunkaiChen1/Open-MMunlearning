@@ -1,0 +1,17 @@
+UMUBENCH_QA_forget:
+  handler: ImageQADataset
+  args:
+    hf_args:
+      path: "parquet"
+      data_files: "${paths.data_dir}/unlearn/umu/forget_10/train-00000-of-00001.parquet"
+      split: "train"
+    image_key: "image"
+    id_key: "ID"
+    qa_pairs_key: "metadata"
+    qa_question_key: "Question"
+    qa_answer_key: "Answer"
+    metadata_sources:
+      - "MM_QA"
+    idk_path: null
+    max_length: 2048
+    tokenize: false

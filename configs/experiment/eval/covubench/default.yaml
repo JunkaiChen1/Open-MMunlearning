@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /model: Qwen2.5-VL-3B-Instruct
+  - override /eval: covubench
+
+ratio: 5
+
+eval:
+  covubench:
+    ratio: ${ratio}
+
+task_name: covubench_eval

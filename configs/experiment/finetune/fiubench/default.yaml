@@ -1,0 +1,41 @@
+# @package _global_
+
+defaults:
+  - override /model: llava-1.5-7b-hf
+  - override /trainer: finetune
+  - override /data: finetune
+  - override /data/datasets@data.train: FIUBENCH_QA_ft
+  - override /collator: DataCollatorForMultimodalQADataset
+  - override /eval: null
+
+mode: finetune
+
+fiubench_data_path: ${paths.data_dir}/finetune/fiubench/train-00000-of-00001.parquet
+
+data:
+  train:
+    FIUBENCH_QA_ft:
+      args:
+        hf_args:
+          data_files: ${fiubench_data_path}
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+      max_length: ${oc.select:model.tokenizer_args.model_max_length,2048}
+      system_prompt: ${model.template_args.system_prompt}
+      image_max_pixels: 200704
+      padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+trainer:
+  args:
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 4
+    learning_rate: 1e-5
+    weight_decay: 0.01
+    warmup_epochs: 1.0
+    num_train_epochs: 5
+    remove_unused_columns: false
+
+task_name: fiubench_llava_ft

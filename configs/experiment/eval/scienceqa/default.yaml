@@ -1,0 +1,7 @@
+# @package _global_
+
+defaults:
+  - override /model: llava-1.5-7b-hf
+  - override /eval: scienceqa
+
+task_name: scienceqa_val

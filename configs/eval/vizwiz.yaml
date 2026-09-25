@@ -1,0 +1,18 @@
+# @package eval.vizwiz
+
+handler: MultimodalBenchmarkEvaluator
+output_dir: ${paths.output_dir}
+overwrite: false
+name: VizWiz
+benchmark: vizwiz
+format: tsv
+data_path: ${paths.data_dir}/eval/vizwiz/VizWiz.tsv
+image_root: ${paths.data_dir}/eval/vizwiz/images
+processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+model_family: null
+prompt_style: auto
+generation_args:
+  max_new_tokens: 32
+  do_sample: false
+max_samples: null
+sample_seed: null

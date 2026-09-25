@@ -1,0 +1,61 @@
+# @package _global_
+
+defaults:
+  - override /model: llava-1.5-7b-hf
+  - override /trainer: GradAscent
+  - override /data: unlearn
+  - override /data/datasets@data.forget: UMUBENCH_QA_forget
+  - override /data/datasets@data.retain: UMUBENCH_QA_retain
+  - override /collator: DataCollatorForMultimodalQADataset
+  - override /eval: null
+
+mode: unlearn
+
+umu_data_dir: ${paths.data_dir}/unlearn/umu
+umu_qa_source: MM_QA
+forget_split: forget_10
+retain_split: retain_90
+
+data:
+  anchor: forget
+  forget:
+    UMUBENCH_QA_forget:
+      args:
+        hf_args:
+          data_files: ${umu_data_dir}/${forget_split}/train-00000-of-00001.parquet
+        metadata_sources:
+          - ${umu_qa_source}
+  retain:
+    UMUBENCH_QA_retain:
+      args:
+        hf_args:
+          data_files: ${umu_data_dir}/${retain_split}/train-00000-of-00001.parquet
+        metadata_sources:
+          - ${umu_qa_source}
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+      max_length: ${oc.select:model.tokenizer_args.model_max_length,2048}
+      system_prompt: ${model.template_args.system_prompt}
+      image_max_pixels: 200704
+      padding_side: ${oc.select:model.tokenizer_args.padding_side,null}
+
+trainer:
+  args:
+    learning_rate: 1e-5
+    weight_decay: 0.01
+    warmup_epochs: 1.0
+    num_train_epochs: 5
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 4
+    gradient_checkpointing: true
+    ddp_find_unused_parameters: true
+    remove_unused_columns: false
+    do_eval: false
+    eval_strategy: "no"
+    eval_on_start: false
+
+eval: null
+task_name: umubench_unlearn_default
