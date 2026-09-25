@@ -105,11 +105,6 @@ python -m pytest -q
 Tests that depend on external benchmark fixtures skip automatically when those
 fixtures are not present.
 
-## Citation
-
-Project-specific author metadata is omitted from this anonymous submission.
-Replace this section with the final citation after review.
-
 ## License
 
 This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
