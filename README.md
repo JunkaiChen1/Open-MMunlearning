@@ -4,10 +4,6 @@
 
 <!-- Open-MMUnlearning 项目横幅：统一多模态大语言模型遗忘方法与评估。 -->
 
-**An extensible framework for multimodal model finetuning, unlearning, and evaluation.**
-
-<!-- 一个可扩展的多模态模型微调、遗忘与评估框架。 -->
-
 <p align="center">
   <a href="https://arxiv.org/abs/2610.10358"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b?logo=arxiv&amp;logoColor=white" alt="arXiv Paper" /></a>
   <a href="https://github.com/JunkaiChen1/Open-MMunlearning/stargazers"><img src="https://img.shields.io/github/stars/JunkaiChen1/Open-MMunlearning?style=social" alt="GitHub Repo stars" /></a>
