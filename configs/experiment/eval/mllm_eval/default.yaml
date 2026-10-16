@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  - /experiment/eval/unlearned
+  - /experiment/eval/mllm_eval/naming
+  - override /model: llava-1.5-7b-hf
+  - override /eval: pope
+  - _self_
+
+ratio: 10

@@ -1,5 +1,6 @@
 import hydra
 from omegaconf import DictConfig
+import eval_config  # noqa: F401 - register resolvers before Hydra composes configs
 
 from trainer.utils import seed_everything
 from model import get_model

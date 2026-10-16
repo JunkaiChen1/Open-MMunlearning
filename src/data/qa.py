@@ -190,7 +190,12 @@ class ImageQADataset(Dataset):
                     question = qa_pair.get(self.qa_question_key, "")
                     answer = qa_pair.get(self.qa_answer_key, "")
                     if question and answer:
-                        sample_image = None if qa_pair.get("has_image") is False else image
+                        sample_image = (
+                            None
+                            if qa_pair.get("has_image") is False
+                            or qa_pair.get("Type") == "Pure_Text"
+                            else image
+                        )
                         samples.append(
                             {
                                 "question": question,
@@ -270,109 +275,6 @@ class ImageQADataset(Dataset):
             if "qa_index" in sample:
                 alternate["qa_index"] = sample["qa_index"]
         return {"original": item, "alternate": alternate}
-
-
-class UMUBenchQADataset(ImageQADataset):
-    def __init__(
-        self,
-        hf_args,
-        template_args,
-        tokenizer,
-        qa_key="MM_QA",
-        qa_keys_source=None,
-        image_key="image",
-        id_key="ID",
-        qa_keys=None,
-        idk_path=None,
-        max_length=512,
-        tokenize=True,
-        predict_with_generate=False,
-    ):
-        self.qa_keys_source = qa_keys_source or [qa_key]
-        self.qa_keys = qa_keys
-        self.idk_responses = None
-        if idk_path is not None:
-            with open(idk_path, "r", encoding="utf-8") as idk_file:
-                self.idk_responses = [line.strip() for line in idk_file if line.strip()]
-            if not self.idk_responses:
-                raise ValueError(f"No IDK responses found in {idk_path}")
-        super().__init__(
-            hf_args=hf_args,
-            template_args=template_args,
-            tokenizer=tokenizer,
-            image_key=image_key,
-            id_key=id_key,
-            max_length=max_length,
-            tokenize=tokenize,
-            predict_with_generate=predict_with_generate,
-        )
-
-    def _parse_umu_qa(self, value):
-        if isinstance(value, str):
-            return ast.literal_eval(value)
-        return value
-
-    def _build_samples(self):
-        samples = []
-        for row_idx, row in enumerate(self.data):
-            sample_id = row.get(self.id_key, row_idx) if self.id_key else row_idx
-            image = row.get(self.image_key, None) if self.image_key else None
-            for qa_source in self.qa_keys_source:
-                sample_image = image if qa_source == "MM_QA" else None
-                qa_pairs = self._parse_umu_qa(row[qa_source])
-                questions = qa_pairs["question"]
-                answers = qa_pairs["answer"]
-                qa_keys = self.qa_keys or questions.keys()
-                for qa_name in qa_keys:
-                    question = questions.get(qa_name, "")
-                    answer = answers.get(qa_name, "")
-                    if question and answer:
-                        samples.append(
-                            {
-                                "question": question,
-                                "answer": answer,
-                                "index": len(samples),
-                                "id": sample_id,
-                                "qa_index": f"{qa_source}:{qa_name}",
-                                "image": sample_image,
-                            }
-                        )
-        return samples
-
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
-        if not self.tokenize:
-            item = {
-                "image": self._load_image(sample["image"])
-                if sample["image"] is not None
-                else None,
-                "question": sample["question"],
-                "answer": sample["answer"],
-                "index": sample["index"],
-                "id": sample["id"],
-                "qa_index": sample["qa_index"],
-            }
-        else:
-            item = self._process_sample(
-                question=sample["question"],
-                answer=sample["answer"],
-                index=sample["index"],
-            )
-            item["id"] = sample["id"]
-            item["qa_index"] = sample["qa_index"]
-        if self.idk_responses is not None:
-            idk_answer = random.choice(self.idk_responses)
-            if not self.tokenize:
-                alternate = dict(item)
-                alternate["answer"] = idk_answer
-            else:
-                alternate = self._process_sample(
-                    question=sample["question"],
-                    answer=idk_answer,
-                    index=sample["index"],
-                )
-            return {"original": item, "alternate": alternate}
-        return item
 
 
 class QAwithAlternateDataset(QADataset):

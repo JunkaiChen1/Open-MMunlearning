@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/clear/default
+  - /experiment/unlearn/mip_editor
+  - _self_

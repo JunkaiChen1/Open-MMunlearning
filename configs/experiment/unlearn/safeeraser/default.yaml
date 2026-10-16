@@ -12,6 +12,9 @@ defaults:
 
 mode: unlearn
 
+model:
+  adapter_path: null
+
 safeeraser_data_dir: ${paths.data_dir}/unlearn/safeeraser
 forget_split: forget
 retain_split: retain
@@ -21,6 +24,7 @@ data:
   forget:
     SAFEERASER_QA_forget:
       args:
+        idk_path: ${oc.select:forget_idk_path,null}
         hf_args:
           data_files: ${safeeraser_data_dir}/${forget_split}/train-00000-of-00001.parquet
   retain:
@@ -63,4 +67,4 @@ peft:
   module_preset: attn
 
 eval: null
-task_name: safeeraser_unlearn_default
+task_name: safeeraser_${model_name}_${forget_split}_${method_name}

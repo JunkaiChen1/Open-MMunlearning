@@ -6,6 +6,7 @@ defaults:
   - override /data: finetune
   - override /data/datasets@data.train: CLEAR_FULL_QA_ft
   - override /collator: DataCollatorForMultimodalQADataset
+  - override /peft: lora
   - override /eval: null
 
 mode: finetune
@@ -30,6 +31,9 @@ collator:
 
 trainer:
   args:
+    do_eval: false
+    eval_on_start: false
+    eval_strategy: "no"
     per_device_train_batch_size: 1
     gradient_accumulation_steps: 4
     learning_rate: 1e-5
@@ -38,4 +42,4 @@ trainer:
     num_train_epochs: 5
     remove_unused_columns: false
 
-task_name: clear_full_llava_ft
+task_name: clear_${model_name}_full

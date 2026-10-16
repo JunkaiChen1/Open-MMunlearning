@@ -10,14 +10,18 @@ from PIL import Image
 from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
 from evals.base import Evaluator
-from evals.scorers import (
+from evals.metrics import (
     KeywordRecallScorer,
     RougeScorer,
     SemanticDissimilarityScorer,
     normalize_text,
+    register_metric,
+)
+from evals.metrics import (
     parse_keywords as _parse_keywords,
 )
-
+from evals.metrics.base import metric_result, unlearning_metric
+from evals.metrics.model_utility import covu_scaled_metrics, covu_utility
 
 logger = logging.getLogger("evaluator")
 _KEYWORD_SCORER = KeywordRecallScorer()
@@ -74,8 +78,7 @@ class CoVUBenchEvaluator(Evaluator):
     )
 
     def __init__(self, eval_cfg, **kwargs):
-        self.name = "COVUBENCH"
-        self.eval_cfg = eval_cfg
+        super().__init__("COVUBENCH", eval_cfg, **kwargs)
         self.processor = None
         self._embedding_tokenizer = None
         self._embedding_model = None
@@ -85,10 +88,6 @@ class CoVUBenchEvaluator(Evaluator):
             use_stemmer=bool(self.eval_cfg.get("rouge_use_stemmer", True)),
             aggregation="recall",
         )
-
-    def prepare_model(self, model):
-        model.eval()
-        return model
 
     def _to_container(self, value, default=None):
         if value is None:
@@ -436,9 +435,7 @@ class CoVUBenchEvaluator(Evaluator):
             "keyword_recall": em_score,
         }
         if split == "retain":
-            rouge = self._rouge_scorer.score(
-                prediction, sample_log["answer"]
-            )
+            rouge = self._rouge_scorer.score(prediction, sample_log["answer"])
             sample_log["rougeL_recall"] = float(rouge.value)
         if self.eval_cfg.get("save_prompts", False):
             sample_log["prompt"] = prompt
@@ -607,32 +604,7 @@ class CoVUBenchEvaluator(Evaluator):
         return list(split_log.get("samples", {}).values())
 
     def _scaled_metrics(self, forget_samples, test_samples, retain_samples):
-        forget_em = _mean(sample.get("keyword_recall") for sample in forget_samples)
-        test_em = _mean(sample.get("keyword_recall") for sample in test_samples)
-        retain_em = _mean(sample.get("keyword_recall") for sample in retain_samples)
-        rouge_l = _mean(sample.get("rougeL_recall") for sample in retain_samples)
-        divergence = _mean(
-            sample.get("semantic_dissimilarity") for sample in forget_samples
-        )
-
-        metrics = {}
-        if forget_em is not None:
-            metrics["Efficacy"] = float((1.0 - forget_em) * 100.0)
-        if test_em is not None:
-            metrics["Generality"] = float((1.0 - test_em) * 100.0)
-        if divergence is not None:
-            metrics["Divergence"] = divergence
-        if rouge_l is not None:
-            metrics["Fluency"] = float(rouge_l * 100.0)
-        if retain_em is not None:
-            metrics["Specificity"] = float(retain_em * 100.0)
-        return metrics, {
-            "forget_keyword_em": forget_em,
-            "test_keyword_em": test_em,
-            "retain_keyword_em": retain_em,
-            "retain_rougeL_recall": rouge_l,
-            "forget_semantic_dissimilarity": divergence,
-        }
+        return covu_scaled_metrics(forget_samples, test_samples, retain_samples)
 
     def _breakdown(self, logs, field):
         split_samples = {
@@ -661,46 +633,10 @@ class CoVUBenchEvaluator(Evaluator):
                 breakdown[value] = metrics
         return breakdown
 
-    def summarize(self, logs):
-        forget_samples = self._samples(logs, "forget")
-        test_samples = self._samples(logs, "test")
-        retain_samples = self._samples(logs, "retain")
-        forget_log = logs.get("splits", {}).get("forget", {})
-        if not forget_log.get("divergence_completed", False):
-            forget_samples_for_metrics = [
-                {
-                    key: value
-                    for key, value in sample.items()
-                    if key != "semantic_dissimilarity"
-                }
-                for sample in forget_samples
-            ]
-        else:
-            forget_samples_for_metrics = forget_samples
+    def _summarize(self, logs):
+        return covu_utility(self, logs)
 
-        metrics, raw_metrics = self._scaled_metrics(
-            forget_samples_for_metrics, test_samples, retain_samples
-        )
-        summary = dict(metrics)
-        summary["metric_scale"] = "0-100"
-        summary["raw_metrics"] = raw_metrics
-        summary["sample_counts"] = {
-            split: len(self._samples(logs, split, completed_only=False))
-            for split in ("forget", "test", "retain")
-        }
-        summary["keyword_scored_counts"] = {
-            split: sum(
-                sample.get("keyword_recall") is not None
-                for sample in self._samples(logs, split, completed_only=False)
-            )
-            for split in ("forget", "test", "retain")
-        }
-        summary["by_question_type"] = self._breakdown(logs, "question_type")
-        summary["by_domain"] = self._breakdown(logs, "type")
-        return summary
-
-    def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
-        overwrite = self.eval_cfg.overwrite if overwrite is None else overwrite
+    def _evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model = self.prepare_model(model)
         tokenizer = kwargs.get("tokenizer", None)
         if tokenizer is None:
@@ -710,15 +646,9 @@ class CoVUBenchEvaluator(Evaluator):
         output_dir = output_dir if output_dir else self.eval_cfg.output_dir
         logs_file_path = self.get_logs_file_path(output_dir)
         summary_file_path = self.get_logs_file_path(output_dir, suffix="SUMMARY")
-        logs = self.load_logs_from_file(logs_file_path) if not overwrite else {}
+        logs = {}
         forget_concepts = self._concepts_for_split("forget")
         signature = self._run_signature(forget_concepts)
-        if logs.get("metadata") and logs["metadata"] != signature:
-            raise ValueError(
-                "Existing CoVUBench logs were created with a different evaluator "
-                "configuration. Set eval.covubench.overwrite=true or use a new "
-                "output directory."
-            )
         logs["metadata"] = signature
         logs.setdefault("splits", {})
 
@@ -732,26 +662,64 @@ class CoVUBenchEvaluator(Evaluator):
         logger.info("Aggregated evaluations will be saved to: %s", summary_file_path)
 
         for split in ("forget", "test", "retain"):
+            names = list(self.metric_names(split=split))
+            if not names:
+                continue
             split_log = logs["splits"].setdefault(split, {})
-            if split_log.get("completed", False):
-                logger.info("Skipping completed CoVUBench split: %s", split)
-            else:
-                logger.info(
-                    "Running CoVUBench split=%s selected_samples=%s",
-                    split,
-                    self._selected_count(split, forget_concepts),
-                )
-                self._evaluate_split(
-                    split,
-                    split_log,
-                    forget_concepts,
-                    model,
-                    tokenizer,
-                    checkpoint,
-                )
+            logger.info(
+                "Running CoVUBench split=%s selected_samples=%s",
+                split,
+                self._selected_count(split, forget_concepts),
+            )
+            for name, metric in self.evaluate_metrics(
+                model,
+                scope=split,
+                split=split,
+                split_log=split_log,
+                forget_concepts=forget_concepts,
+                tokenizer=tokenizer,
+                checkpoint=checkpoint,
+            ):
+                if self.metrics_cfg[name].get("output") != "merge":
+                    self.merge_metric_result(split_log, name, metric)
             if split == "forget" and split_log.get("completed", False):
-                self._ensure_divergence(split_log, checkpoint)
+                for name, metric in self.evaluate_metrics(
+                    model,
+                    scope=split,
+                    phase="post_split",
+                    split=split,
+                    split_log=split_log,
+                    checkpoint=checkpoint,
+                ):
+                    if self.metrics_cfg[name].get("output") != "merge":
+                        self.merge_metric_result(split_log, name, metric)
                 checkpoint()
 
         checkpoint()
         return self.summarize(logs)
+
+
+@register_metric
+@unlearning_metric("covubench_split")
+def _metric_split(
+    model,
+    *,
+    protocol,
+    split,
+    split_log,
+    forget_concepts,
+    tokenizer,
+    checkpoint,
+    **kwargs,
+):
+    protocol._evaluate_split(
+        split, split_log, forget_concepts, model, tokenizer, checkpoint
+    )
+    return metric_result(split_log)
+
+
+@register_metric
+@unlearning_metric("covubench_divergence")
+def _metric_divergence(model, *, protocol, split_log, checkpoint, **kwargs):
+    protocol._ensure_divergence(split_log, checkpoint)
+    return metric_result(split_log)

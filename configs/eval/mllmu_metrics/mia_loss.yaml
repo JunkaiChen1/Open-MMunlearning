@@ -1,0 +1,12 @@
+# @package eval.mllmu.metrics.mia_loss
+
+defaults:
+  - .@pre_compute.generation_pass: generation_pass
+
+handler: mllmu_generation_feature
+task: generation
+feature: mia_loss
+pre_compute:
+  generation_pass:
+    access_key: generation
+output: merge

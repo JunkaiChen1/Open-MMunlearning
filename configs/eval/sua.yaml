@@ -2,8 +2,7 @@
 
 handler: SUAAttackEvaluator
 output_dir: ${paths.output_dir}
-overwrite: false
-refit: false
+overwrite: true
 
 data_root: ${paths.data_dir}/eval/mllmu
 split: forget

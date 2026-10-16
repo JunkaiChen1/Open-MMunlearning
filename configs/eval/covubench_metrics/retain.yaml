@@ -1,0 +1,5 @@
+# @package eval.covubench.metrics.retain
+
+handler: covubench_split
+output: merge
+split: retain

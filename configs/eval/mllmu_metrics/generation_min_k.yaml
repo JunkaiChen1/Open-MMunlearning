@@ -1,0 +1,11 @@
+# @package eval.mllmu.metrics.generation_min_k
+
+defaults:
+  - .@pre_compute.generation_pass: generation_pass
+
+handler: min_k
+task: generation
+ratio: 0.2
+pre_compute:
+  generation_pass:
+    access_key: generation

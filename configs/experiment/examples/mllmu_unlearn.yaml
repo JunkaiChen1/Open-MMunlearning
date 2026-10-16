@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/mllmu/default
+  - override /model: llava-1.5-7b-hf
+  - override /trainer: GradAscent
+  - _self_
+
+forget_split: forget_10
+retain_split: retain_90

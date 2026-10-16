@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - /experiment/eval/mllm_eval/naming
+  - override /model: llava-1.5-7b-hf
+  - override /eval: figstep
+  - _self_
+
+ratio: 10
+eval:
+  figstep:
+    ratio: ${ratio}
+    split: forget
+
+eval_name: ${hydra:runtime.choices.eval}_mllmu_ratio${ratio}

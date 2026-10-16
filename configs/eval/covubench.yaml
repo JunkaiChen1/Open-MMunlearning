@@ -1,8 +1,19 @@
 # @package eval.covubench
 
+defaults:
+  - covubench_metrics:
+      - forget
+      - test
+      - retain
+      - divergence
+      - summary
+  - _self_
+
+metrics: {}
+
 handler: CoVUBenchEvaluator
 output_dir: ${paths.output_dir}
-overwrite: false
+overwrite: true
 
 # Evaluation-only copy of the original public CoVUBench parquet release.
 data_root: ${paths.data_dir}/eval/covubench
@@ -46,11 +57,11 @@ save_prompts: false
 
 # all-MiniLM-L6-v2 is run with the SentenceTransformers mean-pooling recipe.
 # CPU is intentional so it does not compete with the evaluated VLM for VRAM.
-embedding_model_path: sentence-transformers/all-MiniLM-L6-v2
+embedding_model_path: ${oc.env:COVUBENCH_EMBEDDING_MODEL,sentence-transformers/all-MiniLM-L6-v2}
 embedding_device: cpu
 embedding_batch_size: 32
 embedding_max_length: 256
-embedding_local_files_only: true
+embedding_local_files_only: false
 embedding_trust_remote_code: false
 
 rouge_use_stemmer: true

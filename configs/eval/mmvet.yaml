@@ -1,8 +1,14 @@
 # @package eval.mmvet
 
-handler: MultimodalBenchmarkEvaluator
+defaults:
+  - mllm_eval_metrics: mmvet
+  - _self_
+
+metrics: {}
+
+handler: MLLMEvalEvaluator
 output_dir: ${paths.output_dir}
-overwrite: false
+overwrite: true
 name: MM-Vet
 benchmark: mmvet
 format: json

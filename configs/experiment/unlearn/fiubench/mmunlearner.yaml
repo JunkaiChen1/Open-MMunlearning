@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/fiubench/default
+  - override /trainer: MMUnlearner
+  - _self_
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      include_text_only: true
+
+trainer:
+  method_args:
+    mask_save_path: ${paths.output_dir}/mmunlearner_mask.pt

@@ -1,0 +1,8 @@
+# @package eval.vqav2.metrics.results
+
+handler: mllm_eval_results
+pre_compute:
+  generation_pass:
+    handler: mllm_eval_generation
+    access_key: generation
+output: merge

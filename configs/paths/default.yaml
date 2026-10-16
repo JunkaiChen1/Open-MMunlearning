@@ -1,10 +1,8 @@
-# Project root and external resources are configurable so this repository can
-# be checked out independently of any dataset or model storage location.
-root_dir: ${oc.env:OPEN_UNLEARNING_ROOT,${hydra:runtime.cwd}}
+# path to root directory
+root_dir: .
 
-# Keep datasets and downloaded checkpoints outside the source tree by default.
-data_dir: ${oc.env:OPEN_UNLEARNING_DATA_DIR,${paths.root_dir}/data}
-model_dir: ${oc.env:OPEN_UNLEARNING_MODEL_DIR,${paths.root_dir}/models}
+# path to data directory
+data_dir: ${paths.root_dir}/data/
 
 # path to dataset configs
 datasets: ${paths.root_dir}/configs/data/datasets

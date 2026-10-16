@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults:
+  - /experiment/eval/mllmu/default
+  - /eval/mllmu_metrics: generation_reference_loss
+  - /model@eval.mllmu.reference_model: llava-1.5-7b-hf
+  - _self_
+
+reference_checkpoint_path: null
+
+eval:
+  mllmu:
+    tasks: [generation]
+    splits: [forget]
+    generation_truth_ratio: false
+    reference_model:
+      adapter_path: ${reference_checkpoint_path}
+      merge_adapter: true

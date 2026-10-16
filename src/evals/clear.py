@@ -1,6 +1,5 @@
 import json
 import logging
-import math
 import os
 import random
 from io import BytesIO
@@ -13,7 +12,7 @@ from PIL import Image
 from transformers import AutoProcessor
 
 from evals.base import Evaluator
-from evals.scorers import (
+from evals.metrics import (
     AnswerProbabilityScorer,
     ContrastiveProbabilityScorer,
     JensenShannonDistanceScorer,
@@ -25,9 +24,24 @@ from evals.scorers import (
     TruthRatioTransformScorer,
     TwoSampleKSScorer,
     ZlibMIAScorer,
+    register_metric,
     token_log_probability_statistics,
 )
-
+from evals.metrics.answer_probability import (
+    clear_probability,
+    normalize_ground_truth_loss,
+)
+from evals.metrics.base import metric_result, unlearning_metric
+from evals.metrics.forget_quality import clear_quality
+from evals.metrics.model_utility import (
+    clear_group_utility,
+    clear_harmonic_mean,
+    clear_utility,
+)
+from evals.metrics.rouge import clear_rouge_recall, clear_saved_rouge_recall
+from evals.metrics.statistics import clear_statistics
+from evals.metrics.truth_ratio import clear_truth_distribution
+from evals.metrics.utils import clear_flatten_numeric, clear_values_array
 
 logger = logging.getLogger("evaluator")
 IGNORE_INDEX = -100
@@ -69,8 +83,7 @@ class CLEAREvaluator(Evaluator):
     """
 
     def __init__(self, eval_cfg, **kwargs):
-        self.name = "CLEAR"
-        self.eval_cfg = eval_cfg
+        super().__init__("CLEAR", eval_cfg, **kwargs)
         self.processor = None
         self._records_cache = {}
         self._image_cache = {}
@@ -94,10 +107,6 @@ class CLEAREvaluator(Evaluator):
         )
         self._rouge_scorer = RougeScorer(("rouge1", "rougeL"), aggregation="recall")
         self._active_prompt_style = None
-
-    def prepare_model(self, model):
-        model.eval()
-        return model
 
     def _to_container(self, value, default=None):
         if value is None:
@@ -137,7 +146,9 @@ class CLEAREvaluator(Evaluator):
             self.processor.tokenizer.padding_side = self.eval_cfg.padding_side
         if getattr(self.processor.tokenizer, "pad_token", None) is None:
             self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
-            self.processor.tokenizer.pad_token_id = self.processor.tokenizer.eos_token_id
+            self.processor.tokenizer.pad_token_id = (
+                self.processor.tokenizer.eos_token_id
+            )
         if self.eval_cfg.get("processor_do_pad", True):
             setattr(self.processor, "do_pad", True)
         return self.processor
@@ -217,11 +228,7 @@ class CLEAREvaluator(Evaluator):
             raise ValueError(
                 f"split must be set when loading HuggingFace dataset {dataset_path}"
             )
-        dataset = load_dataset(
-            dataset_path,
-            split=split,
-            trust_remote_code=bool(self.eval_cfg.get("dataset_trust_remote_code", False)),
-        )
+        dataset = load_dataset(dataset_path, split=split, trust_remote_code=True)
         return [dict(row) for row in dataset]
 
     def _load_records(self, data_path, split=None):
@@ -306,7 +313,9 @@ class CLEAREvaluator(Evaluator):
                     ),
                 )
             )
-            return str(self.rng.choice(questions)) if questions else "Describe this image."
+            return (
+                str(self.rng.choice(questions)) if questions else "Describe this image."
+            )
 
         question_key = spec.get(
             "question_key", self.eval_cfg.get("metadata_question_key", "question")
@@ -328,7 +337,9 @@ class CLEAREvaluator(Evaluator):
         """Draw a caption question at the same granularity as CLEAR's dataset."""
         if sample.get("question_strategy") == "random_caption":
             questions = sample.get("caption_questions", CAPTION_QUESTIONS)
-            return str(self.rng.choice(questions)) if questions else "Describe this image."
+            return (
+                str(self.rng.choice(questions)) if questions else "Describe this image."
+            )
         return str(sample.get("question", ""))
 
     def _answer_values(self, sample, key, fallback_keys=None):
@@ -338,9 +349,7 @@ class CLEAREvaluator(Evaluator):
         if values:
             return values
         for fallback_key in self._as_list(fallback_keys):
-            values = self._format_answer_values(
-                self._get_field(qa, row, fallback_key)
-            )
+            values = self._format_answer_values(self._get_field(qa, row, fallback_key))
             if values:
                 return values
         return []
@@ -378,7 +387,11 @@ class CLEAREvaluator(Evaluator):
             qas = [row]
         else:
             metadata_value = self._mapping_get(row, metadata_key, None)
-            qas = self._parse_metadata(metadata_value) if metadata_value is not None else []
+            qas = (
+                self._parse_metadata(metadata_value)
+                if metadata_value is not None
+                else []
+            )
             if not qas:
                 qas = [row]
 
@@ -403,7 +416,9 @@ class CLEAREvaluator(Evaluator):
                 question = self._question_for_qa(qa, row, spec)
                 caption_questions = None
             if not question and strategy != "random_caption":
-                logger.warning("Skipping CLEAR row %s qa %s: empty question.", row_index, qa_index)
+                logger.warning(
+                    "Skipping CLEAR row %s qa %s: empty question.", row_index, qa_index
+                )
                 continue
             person_id = self._get_field(qa, row, id_key, default=row_index)
             samples.append(
@@ -416,7 +431,9 @@ class CLEAREvaluator(Evaluator):
                     "question": question,
                     "question_strategy": strategy,
                     "caption_questions": caption_questions,
-                    "category": spec.get("category", str(spec.get("eval_task", "clear"))),
+                    "category": spec.get(
+                        "category", str(spec.get("eval_task", "clear"))
+                    ),
                     "qa": qa,
                     "row": row,
                     "image_value": image_value,
@@ -446,7 +463,9 @@ class CLEAREvaluator(Evaluator):
         if not self.eval_cfg.get("auto_perturbations", True):
             return
         perturb_key = spec.get("perturbed_answer_key", "perturbed_answers")
-        answer_key = spec.get("answer_key", self.eval_cfg.get("metadata_answer_key", "answer"))
+        answer_key = spec.get(
+            "answer_key", self.eval_cfg.get("metadata_answer_key", "answer")
+        )
         pool = self._sample_answer_pool(samples, answer_key)
         num_perturbations = int(self.eval_cfg.get("num_auto_perturbations", 5))
         for sample in samples:
@@ -507,7 +526,9 @@ class CLEAREvaluator(Evaluator):
         if os.path.isabs(raw) and os.path.exists(raw):
             return raw
 
-        image_root = Path(self.eval_cfg.get("image_root", self.eval_cfg.get("data_root", ".")))
+        image_root = Path(
+            self.eval_cfg.get("image_root", self.eval_cfg.get("data_root", "."))
+        )
         data_parent = Path(str(data_path)).parent
         clean = raw.replace("\\", "/").lstrip("./")
         candidates = [
@@ -552,7 +573,9 @@ class CLEAREvaluator(Evaluator):
                 image_path = self._resolve_image_path(image_value["path"], data_path)
                 image = Image.open(image_path).convert("RGB")
             else:
-                raise ValueError(f"Unsupported CLEAR image dict keys: {image_value.keys()}")
+                raise ValueError(
+                    f"Unsupported CLEAR image dict keys: {image_value.keys()}"
+                )
         elif isinstance(image_value, (bytes, bytearray)):
             image = Image.open(BytesIO(image_value)).convert("RGB")
         elif isinstance(image_value, str):
@@ -570,7 +593,9 @@ class CLEAREvaluator(Evaluator):
             and cache_key in self._image_cache
         ):
             return self._image_cache[cache_key]
-        image = self._load_image_value(sample.get("image_value"), sample.get("data_path"))
+        image = self._load_image_value(
+            sample.get("image_value"), sample.get("data_path")
+        )
         if self.eval_cfg.get("cache_images", True) and cache_key and image is not None:
             self._image_cache[cache_key] = image
         return image
@@ -621,7 +646,9 @@ class CLEAREvaluator(Evaluator):
 
     def _build_text_and_images(self, sample, model, answer=None, question=None):
         image = self._load_sample_image(sample)
-        question = self._question_for_sample(sample) if question is None else str(question)
+        question = (
+            self._question_for_sample(sample) if question is None else str(question)
+        )
         style = self._effective_prompt_style(model)
         if style == "chat_template":
             text = self._chat_template_text(question, image, answer=answer)
@@ -686,9 +713,9 @@ class CLEAREvaluator(Evaluator):
             ):
                 labels = full_batch["input_ids"].clone()
                 for label in labels:
-                    non_pad_tokens = (
-                        label != tokenizer.pad_token_id
-                    ).nonzero(as_tuple=True)[0]
+                    non_pad_tokens = (label != tokenizer.pad_token_id).nonzero(
+                        as_tuple=True
+                    )[0]
                     if len(non_pad_tokens) == 0:
                         label[:] = IGNORE_INDEX
                     elif tokenizer.padding_side == "left":
@@ -791,7 +818,9 @@ class CLEAREvaluator(Evaluator):
         with torch.no_grad():
             outputs = model(**full_batch, labels=labels)
 
-        logits = self._remove_image_tokens(full_batch["input_ids"], outputs.logits, model)
+        logits = self._remove_image_tokens(
+            full_batch["input_ids"], outputs.logits, model
+        )
         loss = self._batch_loss(logits, labels)
         result = {
             "prompt_text": prompt_text,
@@ -807,7 +836,13 @@ class CLEAREvaluator(Evaluator):
 
     def _clean_answer(self, text):
         text = str(text)
-        for marker in ("ASSISTANT:", "Assistant:", "assistant:", "Answer:", "### Answer:"):
+        for marker in (
+            "ASSISTANT:",
+            "Assistant:",
+            "assistant:",
+            "Answer:",
+            "### Answer:",
+        ):
             if marker in text:
                 text = text.split(marker)[-1]
         text = text.strip()
@@ -836,9 +871,9 @@ class CLEAREvaluator(Evaluator):
                 if hasattr(processor, "batch_decode")
                 else tokenizer.batch_decode
             )
-            decoded_input = decoder(
-                full_batch["input_ids"], skip_special_tokens=True
-            )[0]
+            decoded_input = decoder(full_batch["input_ids"], skip_special_tokens=True)[
+                0
+            ]
             question = decoded_input[: decoded_input.rfind(str(answer))]
             generation_inputs = tokenizer.batch_encode_plus(
                 [question], add_special_tokens=True, return_tensors="pt", padding=True
@@ -890,15 +925,7 @@ class CLEAREvaluator(Evaluator):
         return prompt, self._clean_answer(generated)
 
     def _rouge_recall(self, generated_outputs, ground_truths, indices):
-        rouge1_recall = {}
-        rouge_l_recall = {}
-        for generated, ground_truth, index in zip(generated_outputs, ground_truths, indices):
-            scores = self._rouge_scorer.score(
-                str(generated), str(ground_truth)
-            ).details
-            rouge1_recall[str(index)] = float(scores["rouge1"])
-            rouge_l_recall[str(index)] = float(scores["rougeL"])
-        return {"rouge1_recall": rouge1_recall, "rougeL_recall": rouge_l_recall}
+        return clear_rouge_recall(self, generated_outputs, ground_truths, indices)
 
     def _perturb_answer_values(self, sample, spec):
         perturb_answers = self._answer_values(
@@ -918,7 +945,9 @@ class CLEAREvaluator(Evaluator):
             "num_token_paraphrased": {},
             "num_token_perturb": {},
         }
-        answer_key = spec.get("answer_key", self.eval_cfg.get("metadata_answer_key", "answer"))
+        answer_key = spec.get(
+            "answer_key", self.eval_cfg.get("metadata_answer_key", "answer")
+        )
         base_answer_key = spec.get("base_answer_key", answer_key)
         for sample in samples:
             index = str(sample["index"])
@@ -975,20 +1004,7 @@ class CLEAREvaluator(Evaluator):
         return logs
 
     def _normalize_gt_loss(self, logs):
-        if "avg_gt_loss" not in logs or "average_perturb_loss" not in logs:
-            return
-        normalized = {}
-        for index, avg_gt_loss in logs["avg_gt_loss"].items():
-            if index not in logs["average_perturb_loss"]:
-                continue
-            probability = self._contrastive_probability_scorer.score(
-                avg_gt_loss,
-                logs["average_perturb_loss"][index],
-            ).value
-            normalized[index] = (
-                float("inf") if probability == 0 else float(-math.log(probability))
-            )
-        logs["normalized_gt_loss"] = normalized
+        return normalize_ground_truth_loss(logs, self._contrastive_probability_scorer)
 
     def _evaluate_task(self, spec, model, tokenizer):
         samples = self._samples_for_task(spec)
@@ -1006,9 +1022,7 @@ class CLEAREvaluator(Evaluator):
             logs = self._evaluate_perturbation_ratio(samples, model, tokenizer, spec)
         logs.update({"avg_gt_loss": {}, "gt_loss": {}, "num_token_gt": {}})
         generation_mia = bool(self.eval_cfg.get("generation_mia", False))
-        generation_min_k_mia = bool(
-            self.eval_cfg.get("generation_mia_min_k", False)
-        )
+        generation_min_k_mia = bool(self.eval_cfg.get("generation_mia_min_k", False))
         if generation_mia:
             logs.update({"loss_mia": {}, "zlib_mia": {}})
         if generation_min_k_mia:
@@ -1016,7 +1030,9 @@ class CLEAREvaluator(Evaluator):
         if self.eval_cfg.get("save_generated_text", True):
             logs["generated_text"] = {}
 
-        answer_key = spec.get("answer_key", self.eval_cfg.get("metadata_answer_key", "answer"))
+        answer_key = spec.get(
+            "answer_key", self.eval_cfg.get("metadata_answer_key", "answer")
+        )
         generated_outputs = []
         ground_truths = []
         indices = []
@@ -1084,6 +1100,12 @@ class CLEAREvaluator(Evaluator):
             indices.append(index)
 
         logs.update(self._rouge_recall(generated_outputs, ground_truths, indices))
+        self._generation_records = [
+            {"id": index, "prediction": prediction, "reference": reference}
+            for index, prediction, reference in zip(
+                indices, generated_outputs, ground_truths
+            )
+        ]
         if "eval_log" not in str(spec.get("eval_task", "")):
             self._normalize_gt_loss(logs)
         return logs
@@ -1130,7 +1152,11 @@ class CLEAREvaluator(Evaluator):
         eval_task_ids = self.eval_cfg.get("eval_task_ids", None)
         if str(eval_task_ids) in ("None", "null", ""):
             eval_task_ids = None
-        eval_task_ids = set(int(item) for item in self._as_list(eval_task_ids)) if eval_task_ids is not None else None
+        eval_task_ids = (
+            set(int(item) for item in self._as_list(eval_task_ids))
+            if eval_task_ids is not None
+            else None
+        )
 
         resolved_specs = []
         for index, spec in enumerate(specs):
@@ -1164,7 +1190,10 @@ class CLEAREvaluator(Evaluator):
                         )
                     spec["data_path"] = str(Path(str(pure_text_root)) / pure_text_split)
             if spec.get("data_path", None) in (None, "", "null", "None"):
-                logger.info("Skipping disabled CLEAR task spec %s.", spec.get("eval_task", index))
+                logger.info(
+                    "Skipping disabled CLEAR task spec %s.",
+                    spec.get("eval_task", index),
+                )
                 continue
             spec.setdefault("eval_task", f"eval_{index}")
             spec.setdefault("split", None)
@@ -1175,62 +1204,16 @@ class CLEAREvaluator(Evaluator):
         return resolved_specs
 
     def _flatten_numeric(self, value):
-        if isinstance(value, dict):
-            values = value.values()
-        elif isinstance(value, list):
-            values = value
-        else:
-            values = [value]
-        flattened = []
-        for item in values:
-            if isinstance(item, (list, tuple, np.ndarray)):
-                flattened.extend(
-                    float(x)
-                    for x in item
-                    if isinstance(x, (int, float, np.integer, np.floating))
-                    and not math.isnan(float(x))
-                )
-            elif isinstance(item, (int, float, np.integer, np.floating)):
-                item = float(item)
-                if not math.isnan(item):
-                    flattened.append(item)
-        return flattened
+        return clear_flatten_numeric(value)
 
     def _dict_values_to_array(self, value):
-        if isinstance(value, dict):
-            value = list(value.values())
-        try:
-            return np.array(value, dtype=float)
-        except (TypeError, ValueError):
-            return np.array(self._flatten_numeric(value), dtype=float)
+        return clear_values_array(self, value)
 
     def _generated_rouge_recall(self, generated_text):
-        rouge1_recall = {}
-        rouge_l_recall = {}
-        for index, pair in generated_text.items():
-            if len(pair) < 3:
-                continue
-            _, generated, ground_truth, *_ = pair
-            scores = self._rouge_scorer.score(
-                str(generated), str(ground_truth)
-            ).details
-            rouge1_recall[str(index)] = float(scores["rouge1"])
-            rouge_l_recall[str(index)] = float(scores["rougeL"])
-        return {"rouge1_recall": rouge1_recall, "rougeL_recall": rouge_l_recall}
+        return clear_saved_rouge_recall(self, generated_text)
 
     def _harmonic_mean(self, values):
-        values = [
-            float(value)
-            for value in values
-            if isinstance(value, (int, float, np.integer, np.floating))
-            and not math.isnan(float(value))
-            and float(value) >= 0
-        ]
-        if not values:
-            return None
-        if any(value == 0 for value in values):
-            return 0.0
-        return float(len(values) / sum(1.0 / value for value in values))
+        return clear_harmonic_mean(values)
 
     def _task_name(self, task_file):
         mapping = self._to_container(self.eval_cfg.get("file_to_task", {}), {})
@@ -1239,200 +1222,28 @@ class CLEAREvaluator(Evaluator):
         return FILE_TO_TASK.get(task_file, task_file.replace(".json", ""))
 
     def _task_truth_distribution(self, task_result):
-        """Build the per-sample CLEAR truth-ratio distribution.
-
-        ``average_perturb_loss`` is a mapping from sample id to a list of
-        perturbation losses.  The perturbations must be averaged *within each
-        sample* before comparing them with that sample's paraphrase loss;
-        averaging the flattened mapping would mix unrelated samples.
-        """
-        paraphrase_values = task_result.get("avg_paraphrased_loss", {})
-        perturbed_values = task_result.get("average_perturb_loss", {})
-
-        if isinstance(paraphrase_values, dict) and isinstance(perturbed_values, dict):
-            pairs = [
-                (paraphrase_values[index], perturbed_values[index])
-                for index in paraphrase_values
-                if index in perturbed_values
-            ]
-        else:
-            paraphrase_items = self._flatten_numeric(paraphrase_values)
-            if isinstance(perturbed_values, (list, tuple, np.ndarray)):
-                perturbed_items = list(perturbed_values)
-            else:
-                perturbed_items = [perturbed_values]
-            if len(paraphrase_items) != len(perturbed_items):
-                return np.array([])
-            pairs = list(zip(paraphrase_items, perturbed_items))
-
-        ratios = []
-        for paraphrase_value, perturbation_values in pairs:
-            base = self._flatten_numeric(paraphrase_value)
-            perturbations = self._flatten_numeric(perturbation_values)
-            if len(base) != 1 or not perturbations:
-                continue
-            difference = float(np.mean(perturbations)) - float(base[0])
-            try:
-                ratios.append(math.exp(difference))
-            except OverflowError:
-                ratios.append(float("inf"))
-        return np.asarray(ratios, dtype=float)
+        return clear_truth_distribution(self, task_result)
 
     def _probability_metric(self, task_file, task_result):
-        avg_gt_loss = self._dict_values_to_array(task_result["avg_gt_loss"])
-        if avg_gt_loss.size == 0:
-            return None
-        true_probs = np.asarray(
-            [self._answer_probability_scorer.score(loss).value for loss in avg_gt_loss],
-            dtype=float,
-        )
-        if "eval_log" in task_file or "average_perturb_loss" not in task_result:
-            return float(true_probs.mean())
-        false_values = task_result["average_perturb_loss"]
-        if isinstance(false_values, dict):
-            false_values = list(false_values.values())
-        if len(false_values) != true_probs.shape[0]:
-            return float(true_probs.mean())
-        contrastive_probabilities = []
-        for target_loss, value in zip(avg_gt_loss, false_values):
-            losses = self._flatten_numeric(value)
-            if not losses:
-                return float(true_probs.mean())
-            contrastive_probabilities.append(
-                self._contrastive_probability_scorer.score(target_loss, losses).value
-            )
-        return float(np.mean(contrastive_probabilities))
+        return clear_probability(self, task_file, task_result)
 
     def _compute_model_utility(self, eval_results):
-        aggregated_results = {}
-        for task_file, task_result in eval_results.items():
-            if not isinstance(task_result, dict) or "avg_gt_loss" not in task_result:
-                continue
-            task_name = self._task_name(task_file)
-            probability = self._probability_metric(task_file, task_result)
-            if probability is not None:
-                aggregated_results[f"Prob. {task_name}"] = probability
-
-            if not task_result.get("rougeL_recall") and task_result.get(
-                "generated_text"
-            ):
-                task_result.update(
-                    self._generated_rouge_recall(task_result["generated_text"])
-                )
-            rouge_values = self._flatten_numeric(task_result.get("rougeL_recall", {}))
-            if rouge_values:
-                aggregated_results[f"ROUGE {task_name}"] = float(np.mean(rouge_values))
-
-            if (
-                "avg_paraphrased_loss" in task_result
-                and "average_perturb_loss" in task_result
-                and task_result["avg_paraphrased_loss"]
-                and task_result["average_perturb_loss"]
-            ):
-                truth_ratio = self._task_truth_distribution(task_result)
-                mode = "forget" if "forget" in task_file else "retain"
-                transformed = [
-                    self._truth_ratio_transform_scorer.score(value, mode=mode).value
-                    for value in truth_ratio
-                ]
-                aggregated_results[f"Truth Ratio {task_name}"] = float(
-                    np.mean(transformed)
-                )
-
-        # Keep the historical image-task Model Utility comparable.  The
-        # newly attached QA-only retain scores are reported separately.
-        utility_values = [
-            value
-            for key, value in aggregated_results.items()
-            if "Forget" not in key and "Pure Text" not in key
-        ]
-        model_utility = self._harmonic_mean(utility_values)
-        if model_utility is not None:
-            aggregated_results["Model Utility"] = model_utility
-
-        text_utility_values = [
-            value
-            for key, value in aggregated_results.items()
-            if "Pure Text Retain" in key
-        ]
-        pure_text_utility = self._harmonic_mean(text_utility_values)
-        if pure_text_utility is not None:
-            aggregated_results["Pure Text Utility"] = pure_text_utility
-
-        if self.eval_cfg.get("include_extended_group_metrics", False):
-            self._add_group_metrics(aggregated_results)
-        return aggregated_results
+        return clear_utility(self, eval_results)
 
     def _add_group_metrics(self, aggregated_results):
-        groups = {
-            "Real metric": ("Real Faces", "Real World"),
-            "Retain metric": ("Retain", "Retain FaceRec"),
-            "Forget metric": ("Forget", "Forget FaceRec"),
-        }
-        for group_name, task_names in groups.items():
-            values = [
-                value
-                for key, value in aggregated_results.items()
-                if any(task_name in key for task_name in task_names)
-            ]
-            group_value = self._harmonic_mean(values)
-            if group_value is not None:
-                aggregated_results[group_name] = group_value
+        return clear_group_utility(self, aggregated_results)
 
     def _evaluate_forget_quality(self, unlearned_data, retained_data):
-        task_key = "eval_log_forget.json"
-        if task_key not in unlearned_data or task_key not in retained_data:
-            return {}
-        first = self._task_truth_distribution(unlearned_data[task_key])
-        second = self._task_truth_distribution(retained_data[task_key])
-        if first.size == 0 or second.size == 0:
-            return {}
-        try:
-            ks_result = self._ks_scorer.score(first, second)
-            js_result = self._js_scorer.score(first, second)
-        except ImportError:
-            logger.warning(
-                "scipy is not installed; skipping CLEAR forget-quality metrics."
-            )
-            return {}
-        return {
-            "KS test p-value": float(ks_result.details["pvalue"]),
-            "JS metric": float(js_result.value),
-        }
+        return clear_quality(self, unlearned_data, retained_data)
 
-    def _load_retain_result(self):
-        retain_result = self.eval_cfg.get("retain_result", None)
-        if retain_result in (None, "", "null", "None"):
-            return None
-        with open(retain_result, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-
-    def summarize(self, logs):
-        summary = {}
-        for task_name, task_logs in logs.items():
-            if not isinstance(task_logs, dict):
-                continue
-            for metric_name, value in task_logs.items():
-                if metric_name == "generated_text":
-                    continue
-                values = self._flatten_numeric(value)
-                if not values:
-                    continue
-                summary[f"{task_name}/{metric_name}/mean"] = float(np.mean(values))
-                summary[f"{task_name}/{metric_name}/count"] = len(values)
-
-        summary.update(self._compute_model_utility(logs))
-        retained_data = self._load_retain_result()
-        if retained_data is not None:
-            summary.update(self._evaluate_forget_quality(logs, retained_data))
-        return summary
+    def _summary_statistics(self, logs):
+        return clear_statistics(self, logs)
 
     def _safe_split_name(self, split):
         split = "none" if split is None else str(split)
         return split.replace("/", "_").replace(" ", "_")
 
-    def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
-        overwrite = self.eval_cfg.overwrite if overwrite is None else overwrite
+    def _evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
         model = self.prepare_model(model)
         tokenizer = kwargs.get("tokenizer", None)
         if tokenizer is None:
@@ -1444,35 +1255,45 @@ class CLEAREvaluator(Evaluator):
             self.eval_cfg.output_dir = output_dir
         logs_file_path = self.get_logs_file_path(output_dir)
         summary_file_path = self.get_logs_file_path(output_dir, suffix="SUMMARY")
-        logs = self.load_logs_from_file(logs_file_path) if not overwrite else {}
+        logs = {}
 
         logger.info("***** Running %s evaluation suite *****", self.name)
         logger.info("Fine-grained evaluations will be saved to: %s", logs_file_path)
-        logger.info("Aggregated evaluations will be summarised in: %s", summary_file_path)
+        logger.info(
+            "Aggregated evaluations will be summarised in: %s", summary_file_path
+        )
 
         for spec in self._task_specs():
+            names = list(self.metric_names(task=spec["eval_task"], split=spec["split"]))
+            if not names:
+                continue
             task_key = f"{spec['eval_task']}.json"
             split_file_path = os.path.join(
                 output_dir,
                 f"{self._safe_split_name(spec.get('split'))}_{spec['eval_task']}.json",
             )
-            if not overwrite and task_key in logs and logs[task_key]:
-                logger.info("Skipping %s, already evaluated.", task_key)
-                continue
-            if os.path.exists(split_file_path) and not overwrite:
-                logger.info("Loading existing CLEAR task log from %s", split_file_path)
-                with open(split_file_path, "r", encoding="utf-8") as handle:
-                    task_logs = json.load(handle)
-            else:
-                task_logs = self._evaluate_task(spec, model, tokenizer)
-                os.makedirs(output_dir, exist_ok=True)
-                with open(split_file_path, "w", encoding="utf-8") as handle:
-                    json.dump(task_logs, handle, indent=4)
+            task_logs = {}
+            for metric_name, metric in self.evaluate_metrics(
+                model,
+                scope=task_key,
+                task=spec["eval_task"],
+                split=spec["split"],
+                spec=spec,
+                tokenizer=tokenizer,
+                logs=task_logs,
+            ):
+                self.merge_metric_result(task_logs, metric_name, metric)
+            os.makedirs(output_dir, exist_ok=True)
+            with open(split_file_path, "w", encoding="utf-8") as handle:
+                json.dump(task_logs, handle, indent=4)
             logs[task_key] = task_logs
             self.save_logs(logs, logs_file_path)
             self.save_logs(self.summarize(logs), summary_file_path)
 
-        for aggregate_name in ("CLEAR_eval_log_aggregated.json", "eval_log_aggregated.json"):
+        for aggregate_name in (
+            "CLEAR_eval_log_aggregated.json",
+            "eval_log_aggregated.json",
+        ):
             aggregate_path = os.path.join(output_dir, aggregate_name)
             with open(aggregate_path, "w", encoding="utf-8") as handle:
                 json.dump(logs, handle, indent=4)
@@ -1480,3 +1301,13 @@ class CLEAREvaluator(Evaluator):
         summary = self.summarize(logs)
         self.save_logs(summary, summary_file_path)
         return summary
+
+
+@register_metric
+@unlearning_metric("clear_task")
+def _metric_task(model, *, protocol, spec, tokenizer, **kwargs):
+    protocol._generation_records = []
+    result = metric_result(protocol._evaluate_task(spec, model, tokenizer))
+    if protocol._generation_records:
+        result["samples"] = protocol._generation_records
+    return result

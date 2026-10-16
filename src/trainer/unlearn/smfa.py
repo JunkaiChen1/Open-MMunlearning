@@ -3,7 +3,7 @@
 SMFA learns separate multimodal-forget, text-forget, and retain adapters in a
 single Trainer run. The forget adapters learn IDK targets together with retain
 answers. At load time their conflicting deltas are sculpted against the retain
-adapter and applied to the fine-tuned base model.
+adapter and applied to the source model, with or without a fine-tuned adapter.
 """
 
 from __future__ import annotations
@@ -46,9 +46,9 @@ class SMFA(UnlearnTrainer):
         if len(names) != 3 or len(set(names)) != 3:
             raise ValueError("SMFA needs three distinct adapter names")
 
-        # All unlearning updates must start from the fine-tuned model represented
-        # by the incoming default adapter. Merge it before creating SMFA's three
-        # independent training adapters.
+        # Merge the incoming adapter before creating three independent training
+        # adapters. Without a source adapter, PEFT's default zero-initialized
+        # update leaves the pretrained base unchanged.
         source_name = model.active_adapter
         if isinstance(source_name, list):
             source_name = source_name[0]
@@ -79,8 +79,6 @@ class SMFA(UnlearnTrainer):
         self.text_k = text_k
         self.adapter_names = tuple(names)
         self.source_adapter_path = source_adapter_path
-        if not self.source_adapter_path:
-            raise ValueError("SMFA requires source_adapter_path for reloadable output")
         self._activate(self.adapter_names[0])
         logger.info("SMFA adapters: %s", ", ".join(self.adapter_names))
 
@@ -187,7 +185,11 @@ class SMFA(UnlearnTrainer):
             artifact = {
                 "version": 1,
                 "type": "smfa",
-                "source_adapter_path": str(Path(self.source_adapter_path).resolve()),
+                "source_adapter_path": (
+                    str(Path(self.source_adapter_path).resolve())
+                    if self.source_adapter_path is not None
+                    else None
+                ),
                 "adapters": list(self.adapter_names),
                 "multi_k": self.multi_k,
                 "text_k": self.text_k,

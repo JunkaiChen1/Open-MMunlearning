@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - /experiment/eval/mllmu/default
+  - /experiment/eval/unlearned
+  - _self_
+
+benchmark_name: mllmu
