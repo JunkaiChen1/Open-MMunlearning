@@ -1,6 +1,0 @@
-# @package eval.covubench.metrics.divergence
-
-handler: covubench_divergence
-output: merge
-split: forget
-phase: post_split

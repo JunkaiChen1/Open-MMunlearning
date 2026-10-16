@@ -1,23 +1,8 @@
 # @package eval.mllmu
 
-defaults:
-  - mllmu_metrics:
-      - classification
-      - fill_in_the_blank
-      - generation_distribution
-      - summary
-      - generation_rouge
-      - answer_probability
-      - mia_loss
-      - mia_min_k
-      - truth_ratio
-  - _self_
-
-metrics: {}
-
 handler: MLLMUBenchEvaluator
 output_dir: ${paths.output_dir}
-overwrite: true
+overwrite: false
 
 # Original MLLMU-Bench parquet layout.
 data_root: ${paths.data_dir}/eval/mllmu

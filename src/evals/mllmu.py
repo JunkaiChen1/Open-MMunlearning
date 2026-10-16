@@ -8,13 +8,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, ListConfig, OmegaConf
+from omegaconf import open_dict
 from PIL import Image
 from transformers import AutoProcessor
 
 from evals.base import Evaluator
-from evals.metrics import (
-    METRICS_REGISTRY,
+from evals.scorers import (
     AnswerProbabilityScorer,
     BleuScorer,
     ContainsScorer,
@@ -26,37 +26,12 @@ from evals.metrics import (
     StandardMinKScorer,
     TwoSampleKSScorer,
     ZlibMIAScorer,
-    get_input_requirements,
-    register_metric,
     token_log_probability_statistics,
 )
-from evals.metrics.accuracy import mllmu_accuracy, percentage
-from evals.metrics.answer_probability import mllmu_probability_scores
-from evals.metrics.base import metric_result, unlearning_metric
-from evals.metrics.bleu import mllmu_bleu_scores
-from evals.metrics.choice_accuracy import extract_mllmu_choice
-from evals.metrics.loss_mia import mllmu_loss_scores
-from evals.metrics.min_k import mllmu_min_k_scores
-from evals.metrics.min_k_plus_plus import mllmu_min_k_plus_plus_scores
-from evals.metrics.rouge import mllmu_rouge_scores
-from evals.metrics.truth_ratio import mllmu_positive_loss, mllmu_truth_ratio_scores
-from evals.metrics.zlib_mia import mllmu_zlib_scores
+
 
 logger = logging.getLogger("evaluator")
 IGNORE_INDEX = -100
-GENERATION_INPUT_FIELDS = frozenset(
-    (
-        "avg_loss",
-        "token_log_probs",
-        "mu",
-        "sigma",
-        "grad_norm",
-        "target_loss",
-        "ref_loss",
-        "base_loss",
-        "perturbation_losses",
-    )
-)
 
 
 class MLLMUBenchEvaluator(Evaluator):
@@ -69,69 +44,8 @@ class MLLMUBenchEvaluator(Evaluator):
     """
 
     def __init__(self, eval_cfg, **kwargs):
-        super().__init__("MLLMU", eval_cfg, **kwargs)
-        generation_configs = {
-            name: config
-            for name, config in self.metrics_cfg.items()
-            if config.get("phase", "evaluation") == "evaluation"
-            and config.get("task") in (None, "generation")
-        }
-        self._input_requirements = get_input_requirements(generation_configs)
-        configured_features = {
-            config.get("feature")
-            for config in generation_configs.values()
-            if config.get("feature")
-        }
-        for flag, feature in (
-            ("generation_answer_probability", "answer_probability"),
-            ("generation_mia", "mia_loss"),
-            ("generation_mia_min_k", "mia_min_k"),
-            ("generation_truth_ratio", "truth_ratio"),
-        ):
-            # Keep legacy aggregate switches independent from raw input
-            # requirements. A generic ``loss_mia`` metric needs ``avg_loss``
-            # but does not imply the benchmark's aggregate ``mia_loss``.
-            if feature not in configured_features:
-                with open_dict(eval_cfg):
-                    eval_cfg[flag] = False
-        self._needs_grad_norm = "grad_norm" in self._input_requirements
-        self._gradnorm_p = eval_cfg.get("gradnorm_p", 2)
-        self._reference_config = eval_cfg.get("reference_model")
-        self._reference_model = None
-        gradient_norms = set()
-        references = []
-
-        def collect_options(configs, inherited=None):
-            for config in configs.values():
-                arguments = {**(inherited or {}), **dict(config)}
-                required = METRICS_REGISTRY[config["handler"]].input_requirements(
-                    config
-                )
-                if "grad_norm" in required:
-                    gradient_norms.add(arguments.get("p", self._gradnorm_p))
-                if "ref_loss" in required:
-                    reference = arguments.get("reference_model", self._reference_config)
-                    if reference is not None:
-                        references.append(reference)
-                collect_options(config.get("pre_compute", {}), arguments)
-
-        collect_options(generation_configs)
-        if len(gradient_norms) > 1:
-            raise ValueError(
-                "A shared MLLMU generation pass requires the same gradnorm p."
-            )
-        if gradient_norms:
-            self._gradnorm_p = gradient_norms.pop()
-        if self._needs_grad_norm and self._gradnorm_p not in (1, 2, float("inf")):
-            raise ValueError(f"Invalid p-norm value: {self._gradnorm_p}")
-        if references:
-            self._reference_config = references[0]
-            if any(reference != self._reference_config for reference in references[1:]):
-                raise ValueError(
-                    "A shared MLLMU generation pass requires the same reference model."
-                )
-        if "ref_loss" in self._input_requirements and self._reference_config is None:
-            raise ValueError("reference_loss requires a reference_model configuration.")
+        self.name = "MLLMU"
+        self.eval_cfg = eval_cfg
         self.processor = None
         self._few_shot_df = None
         self._active_model_family = None
@@ -162,18 +76,9 @@ class MLLMUBenchEvaluator(Evaluator):
         )
         self._truth_ratio_variants = None
 
-    def _get_reference_model(self):
-        if self._reference_model is None:
-            from evals.metrics.mia_auc import load_reference_model
-
-            self._reference_model = load_reference_model(self._reference_config)
-        return self._reference_model
-
-    def evaluate(self, *args, **kwargs):
-        try:
-            return super().evaluate(*args, **kwargs)
-        finally:
-            self._reference_model = None
+    def prepare_model(self, model):
+        model.eval()
+        return model
 
     def _to_container(self, value, default=None):
         if value is None:
@@ -704,8 +609,6 @@ class MLLMUBenchEvaluator(Evaluator):
         input_mode="auto",
         single_image=False,
         compute_token_stats=False,
-        compute_grad_norm=False,
-        gradnorm_p=2,
     ):
         full_batch = self._prepare_inputs(
             full_prompt,
@@ -752,21 +655,6 @@ class MLLMUBenchEvaluator(Evaluator):
                 full_batch["input_ids"], logits, labels, model
             )
             result.update(token_log_probability_statistics(aligned_logits, labels))
-        if compute_grad_norm:
-            from evals.metrics.gradnorm import gradient_norms
-            from evals.utils.inference import tokenwise_logprobs
-
-            model.train()
-            try:
-                log_probs = tokenwise_logprobs(
-                    model,
-                    {**full_batch, "labels": labels},
-                    grad=True,
-                    align_logits=self._align_logits_to_labels,
-                )
-                result["grad_norm"] = gradient_norms(model, log_probs, p=gradnorm_p)[0]
-            finally:
-                model.eval()
         return result
 
     def _uses_upstream_raw_generation(self):
@@ -842,9 +730,18 @@ class MLLMUBenchEvaluator(Evaluator):
         return text.strip()
 
     def _extract_choice(self, answer, options):
-        return extract_mllmu_choice(
-            answer, options, self.eval_cfg.get("choice_parse_strategy", "first_char")
-        )
+        answer = str(answer).strip()
+        if not answer:
+            return None
+        strategy = self.eval_cfg.get("choice_parse_strategy", "first_char")
+        option_keys = {str(key).upper() for key in options.keys()}
+        if strategy == "first_valid":
+            for char in answer.upper():
+                if char in option_keys:
+                    return char
+            return None
+        first = answer[0].upper()
+        return first if first in option_keys else None
 
     def _bleu(self, ground_truth, predicted_answer):
         return self._bleu_scorer.score(predicted_answer, ground_truth).value
@@ -956,7 +853,15 @@ class MLLMUBenchEvaluator(Evaluator):
                     }
                 )
 
-        result = mllmu_accuracy(counts, fill_in_the_blank=False)
+        result = {
+            "Image-Textual Question Accuracy": self._percent(
+                counts["image_textual_correct"], counts["image_textual_total"]
+            ),
+            "Pure Text Question Accuracy": self._percent(
+                counts["pure_text_correct"], counts["pure_text_total"]
+            ),
+            "counts": counts,
+        }
         if self.eval_cfg.get("save_task_details", True):
             result["details"] = details
         return result
@@ -1019,7 +924,15 @@ class MLLMUBenchEvaluator(Evaluator):
                     }
                 )
 
-        result = mllmu_accuracy(counts, fill_in_the_blank=True)
+        result = {
+            "image_textual_accuracy": self._percent(
+                counts["image_textual_correct"], counts["image_textual_total"]
+            ),
+            "pure_text_accuracy": self._percent(
+                counts["pure_text_correct"], counts["pure_text_total"]
+            ),
+            "counts": counts,
+        }
         if self.eval_cfg.get("save_task_details", True):
             result["details"] = details
         return result
@@ -1069,18 +982,8 @@ class MLLMUBenchEvaluator(Evaluator):
         generation_truth_ratio = bool(
             self.eval_cfg.get("generation_truth_ratio", False)
         )
-        required = self._input_requirements
-        collect_tokens = generation_min_k_mia or bool(
-            {"token_log_probs", "mu", "sigma"} & required
-        )
-        collect_truth = generation_truth_ratio or bool(
-            {"base_loss", "perturbation_losses"} & required
-        )
-        collect_loss = bool(
-            (GENERATION_INPUT_FIELDS - {"base_loss", "perturbation_losses"}) & required
-        )
         truth_ratio_variants = (
-            self._load_truth_ratio_variants() if collect_truth else {}
+            self._load_truth_ratio_variants() if generation_truth_ratio else {}
         )
         truth_ratio_distribution = {"Image_Textual": [], "Pure_Text": []}
         details = []
@@ -1129,14 +1032,11 @@ class MLLMUBenchEvaluator(Evaluator):
                 min_k_20_mia = None
                 min_k_plus_plus_20_mia = None
                 answer_probability = None
-                reference_loss = None
                 if (
                     generation_answer_probability
                     or generation_mia
                     or generation_min_k_mia
                     or generation_truth_ratio
-                    or collect_loss
-                    or collect_truth
                 ):
                     full_prompt, answer_images = self._build_prompt(
                         text,
@@ -1153,12 +1053,7 @@ class MLLMUBenchEvaluator(Evaluator):
                         answer_images,
                         input_mode=input_mode,
                         single_image=single_image,
-                        compute_token_stats=collect_tokens,
-                        **(
-                            {"compute_grad_norm": True, "gradnorm_p": self._gradnorm_p}
-                            if "grad_norm" in required
-                            else {}
-                        ),
+                        compute_token_stats=generation_min_k_mia,
                     )
                     if loss_result is None:
                         logger.warning(
@@ -1190,21 +1085,11 @@ class MLLMUBenchEvaluator(Evaluator):
                                     loss_result["sigma"],
                                 ).value
                             )
-                        if "ref_loss" in required:
-                            reference_loss = self._answer_loss(
-                                self._get_reference_model(),
-                                tokenizer,
-                                prompt,
-                                full_prompt,
-                                answer_images,
-                                input_mode=input_mode,
-                                single_image=single_image,
-                            )
 
                 paraphrase_loss = None
                 perturbation_losses = []
                 truth_ratio = None
-                if collect_truth:
+                if generation_truth_ratio:
                     variant_key = (row_id, question_index, question_type)
                     variant = truth_ratio_variants.get(variant_key)
                     if variant is None:
@@ -1256,9 +1141,9 @@ class MLLMUBenchEvaluator(Evaluator):
                         and len(perturbation_losses)
                         == len(variant["perturbed_answers"])
                     ):
-                        positive_loss = mllmu_positive_loss(
-                            loss_result["avg_loss"], paraphrase_loss["avg_loss"]
-                        )
+                        positive_loss = (
+                            loss_result["avg_loss"] + paraphrase_loss["avg_loss"]
+                        ) / 2.0
                         truth_ratio = self._truth_ratio_scorer.score(
                             positive_loss,
                             [loss["avg_loss"] for loss in perturbation_losses],
@@ -1334,50 +1219,93 @@ class MLLMUBenchEvaluator(Evaluator):
                         detail["avg_perturbation_losses"] = [
                             loss["avg_loss"] for loss in perturbation_losses
                         ]
-                for key in required & {
-                    "avg_loss",
-                    "token_log_probs",
-                    "mu",
-                    "sigma",
-                    "grad_norm",
-                }:
-                    value = loss_result.get(key) if loss_result is not None else None
-                    if hasattr(value, "detach"):
-                        value = value.detach().float().cpu().tolist()
-                    detail[key] = value
-                if "target_loss" in required:
-                    detail["target_loss"] = (
-                        loss_result["avg_loss"] if loss_result is not None else None
-                    )
-                if "ref_loss" in required:
-                    detail["ref_loss"] = (
-                        reference_loss["avg_loss"]
-                        if reference_loss is not None
-                        else None
-                    )
-                if "base_loss" in required:
-                    detail["base_loss"] = (
-                        positive_loss if truth_ratio is not None else None
-                    )
-                if "perturbation_losses" in required:
-                    detail["perturbation_losses"] = (
-                        [loss["avg_loss"] for loss in perturbation_losses]
-                        if truth_ratio is not None
-                        else None
-                    )
                 details.append(detail)
 
         result = {}
-        result.update(mllmu_rouge_scores(totals))
-        result.update(mllmu_bleu_scores(totals))
-        result.update(mllmu_probability_scores(totals))
-        result.update(mllmu_truth_ratio_scores(totals))
-        if generation_mia:
-            result.update(mllmu_loss_scores(totals))
-            result.update(mllmu_zlib_scores(totals))
+        if totals["image_textual"]["n"]:
+            n = totals["image_textual"]["n"]
+            result.update(
+                {
+                    "Average ROUGE-1 (Image_Textual)": totals["image_textual"]["rouge1"]
+                    / n,
+                    "Average ROUGE-2 (Image_Textual)": totals["image_textual"]["rouge2"]
+                    / n,
+                    "Average ROUGE-L (Image_Textual)": totals["image_textual"]["rougeL"]
+                    / n,
+                    "Average BLEU (Image_Textual)": totals["image_textual"]["bleu"] / n,
+                }
+            )
+            if totals["image_textual"]["probability_n"]:
+                result["Average Answer Probability (Image_Textual)"] = (
+                    totals["image_textual"]["answer_probability"]
+                    / totals["image_textual"]["probability_n"]
+                )
+            if totals["image_textual"]["truth_ratio_n"]:
+                result["Average Truth Ratio (Image_Textual)"] = (
+                    totals["image_textual"]["truth_ratio"]
+                    / totals["image_textual"]["truth_ratio_n"]
+                )
+        if totals["pure_text"]["n"]:
+            n = totals["pure_text"]["n"]
+            result.update(
+                {
+                    "Average ROUGE-1 (Pure_Text)": totals["pure_text"]["rouge1"] / n,
+                    "Average ROUGE-2 (Pure_Text)": totals["pure_text"]["rouge2"] / n,
+                    "Average ROUGE-L (Pure_Text)": totals["pure_text"]["rougeL"] / n,
+                    "Average BLEU (Pure_Text)": totals["pure_text"]["bleu"] / n,
+                }
+            )
+            if totals["pure_text"]["probability_n"]:
+                result["Average Answer Probability (Pure_Text)"] = (
+                    totals["pure_text"]["answer_probability"]
+                    / totals["pure_text"]["probability_n"]
+                )
+            if totals["pure_text"]["truth_ratio_n"]:
+                result["Average Truth Ratio (Pure_Text)"] = (
+                    totals["pure_text"]["truth_ratio"]
+                    / totals["pure_text"]["truth_ratio_n"]
+                )
+        if generation_mia and totals["image_textual"]["mia_n"]:
+            n = totals["image_textual"]["mia_n"]
+            result.update(
+                {
+                    "Average Loss MIA (Image_Textual)": totals["image_textual"][
+                        "loss_mia"
+                    ]
+                    / n,
+                    "Average ZLIB MIA (Image_Textual)": totals["image_textual"][
+                        "zlib_mia"
+                    ]
+                    / n,
+                }
+            )
+        if generation_mia and totals["pure_text"]["mia_n"]:
+            n = totals["pure_text"]["mia_n"]
+            result.update(
+                {
+                    "Average Loss MIA (Pure_Text)": totals["pure_text"]["loss_mia"] / n,
+                    "Average ZLIB MIA (Pure_Text)": totals["pure_text"]["zlib_mia"] / n,
+                }
+            )
         if generation_min_k_mia:
-            result.update(mllmu_min_k_scores(totals))
-            result.update(mllmu_min_k_plus_plus_scores(totals))
+            for bucket, label in (
+                ("image_textual", "Image_Textual"),
+                ("pure_text", "Pure_Text"),
+            ):
+                n = totals[bucket]["min_k_mia_n"]
+                if n:
+                    result.update(
+                        {
+                            f"Average Min-K 20% MIA ({label})": totals[bucket][
+                                "min_k_20_mia"
+                            ]
+                            / n,
+                            f"Average Min-K++ 20% MIA ({label})": totals[bucket][
+                                "min_k_plus_plus_20_mia"
+                            ]
+                            / n,
+                        }
+                    )
         if generation_truth_ratio:
             result["truth_ratio_distribution"] = truth_ratio_distribution
         result["counts"] = {
@@ -1413,11 +1341,10 @@ class MLLMUBenchEvaluator(Evaluator):
             )
         if self.eval_cfg.get("save_task_details", True):
             result["details"] = details
-        self._generation_records = details
         return result
 
     def _percent(self, numerator, denominator):
-        return percentage(numerator, denominator)
+        return (numerator / denominator) * 100 if denominator else 0.0
 
     def _split_specs(self):
         data_root = Path(self.eval_cfg.data_root)
@@ -1445,9 +1372,7 @@ class MLLMUBenchEvaluator(Evaluator):
             },
         }
 
-    def _evaluate_split_metrics(
-        self, split_name, spec, model, tokenizer, family, forget_df
-    ):
+    def _evaluate_split(self, split_name, spec, model, tokenizer, family, forget_df):
         df = self._read_parquet(spec["path"])
         id_list = self._id_list_for_split(df, spec["mode"], forget_df=forget_df)
         df = self._filtered_samples(df, id_list, spec["mode"])
@@ -1470,38 +1395,20 @@ class MLLMUBenchEvaluator(Evaluator):
             tasks = configured_tasks
 
         for task in tasks:
-            names = list(self.metric_names(task=task, split=split_name))
-            if task == "generation":
-                self._input_requirements = get_input_requirements(
-                    {name: self.metrics_cfg[name] for name in names}
+            if task == "fill_in_the_blank":
+                result[task] = self._evaluate_fill_in_the_blank(
+                    df, id_list, model, tokenizer, family, spec["mode"]
                 )
-            task_result = {}
-            scope = f"{split_name}/{task}"
-            for name, metric in self.evaluate_metrics(
-                model,
-                scope=scope,
-                task=task,
-                split=split_name,
-                data=df,
-                id_list=id_list,
-                tokenizer=tokenizer,
-                family=family,
-                mode=spec["mode"],
-            ):
-                self.merge_metric_result(task_result, name, metric)
-            if (
-                task == "generation"
-                and self._input_requirements & GENERATION_INPUT_FIELDS
-            ):
-                source = self.metric_cache.get(scope, {}).get("generation_pass", {})
-                if self.eval_cfg.get("save_task_details", True) and "samples" in source:
-                    task_result["details"] = source["samples"]
-            if task_result:
-                result[task] = task_result
-                if task == "generation" and self.eval_cfg.get(
-                    "save_generation_details", True
-                ):
-                    self._save_generation_details(split_name, task_result)
+            elif task == "classification":
+                result[task] = self._evaluate_classification(
+                    df, id_list, model, tokenizer, family, spec["mode"]
+                )
+            elif task == "generation":
+                result[task] = self._evaluate_generation(
+                    df, model, tokenizer, spec["mode"]
+                )
+                if self.eval_cfg.get("save_generation_details", True):
+                    self._save_generation_details(split_name, result[task])
         return result
 
     def _add_generation_distribution_metrics(self, logs, enabled_splits):
@@ -1558,19 +1465,11 @@ class MLLMUBenchEvaluator(Evaluator):
                 indent=4,
             )
 
-    def _summarize(self, logs):
+    def summarize(self, logs):
         summary = {}
         for split_name, split_result in logs.items():
-            if split_name in self.metrics and "agg_value" in split_result:
-                continue
             for task_name, task_result in split_result.items():
                 for metric_name, value in task_result.items():
-                    if (
-                        metric_name in self.metrics
-                        and isinstance(value, dict)
-                        and "agg_value" in value
-                    ):
-                        continue
                     if metric_name in (
                         "details",
                         "counts",
@@ -1581,7 +1480,8 @@ class MLLMUBenchEvaluator(Evaluator):
                     summary[f"{split_name}/{task_name}/{metric_name}"] = value
         return summary
 
-    def _evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+    def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+        overwrite = self.eval_cfg.overwrite if overwrite is None else overwrite
         model = self.prepare_model(model)
         tokenizer = kwargs.get("tokenizer", None)
         if tokenizer is None:
@@ -1593,7 +1493,7 @@ class MLLMUBenchEvaluator(Evaluator):
             self.eval_cfg.output_dir = output_dir
         logs_file_path = self.get_logs_file_path(output_dir)
         summary_file_path = self.get_logs_file_path(output_dir, suffix="SUMMARY")
-        logs = {}
+        logs = self.load_logs_from_file(logs_file_path) if not overwrite else {}
 
         family = self._model_family(model)
         self._active_model_family = family
@@ -1614,96 +1514,28 @@ class MLLMUBenchEvaluator(Evaluator):
         for split_name in enabled_splits:
             if split_name not in split_specs:
                 raise ValueError(f"Unknown MLLMU split: {split_name}")
+            if not overwrite and split_name in logs and logs[split_name]:
+                generation_result = logs[split_name].get("generation", {})
+                truth_ratio_ready = "truth_ratio_distribution" in generation_result
+                if (
+                    not self.eval_cfg.get("generation_truth_ratio", False)
+                    or truth_ratio_ready
+                ):
+                    logger.info("Skipping %s, already evaluated.", split_name)
+                    continue
+                logger.info(
+                    "Re-evaluating %s because Truth Ratio metrics are missing.",
+                    split_name,
+                )
             logger.info("Running MLLMU split: %s", split_name)
-            logs[split_name] = self._evaluate_split_metrics(
-                split_name,
-                split_specs[split_name],
-                model,
-                tokenizer,
-                family,
-                forget_df,
+            logs[split_name] = self._evaluate_split(
+                split_name, split_specs[split_name], model, tokenizer, family, forget_df
             )
             self.save_logs(logs, logs_file_path)
             self.save_logs(self.summarize(logs), summary_file_path)
 
-        for name, metric in self.evaluate_metrics(
-            model,
-            phase="final",
-            logs=logs,
-            enabled_splits=enabled_splits,
-        ):
-            self.merge_metric_result(logs, name, metric)
+        self._add_generation_distribution_metrics(logs, enabled_splits)
         summary = self.summarize(logs)
         self.save_logs(logs, logs_file_path)
         self.save_logs(summary, summary_file_path)
         return summary
-
-
-@register_metric
-@unlearning_metric("mllmu_classification")
-def _metric_classification(
-    model, *, protocol, data, id_list, tokenizer, family, mode, **kwargs
-):
-    return metric_result(
-        protocol._evaluate_classification(data, id_list, model, tokenizer, family, mode)
-    )
-
-
-@register_metric
-@unlearning_metric("mllmu_fill_in_the_blank")
-def _metric_fill_in_the_blank(
-    model, *, protocol, data, id_list, tokenizer, family, mode, **kwargs
-):
-    return metric_result(
-        protocol._evaluate_fill_in_the_blank(
-            data, id_list, model, tokenizer, family, mode
-        )
-    )
-
-
-@register_metric
-@unlearning_metric("mllmu_generation_pass")
-def _metric_generation_pass(model, *, protocol, data, tokenizer, mode, **kwargs):
-    protocol._generation_records = []
-    result = metric_result(protocol._evaluate_generation(data, model, tokenizer, mode))
-    result["samples"] = protocol._generation_records or result["value_by_index"].get(
-        "details", []
-    )
-    return result
-
-
-def _feature(key):
-    if "Answer Probability" in key:
-        return "answer_probability"
-    if "Min-K" in key:
-        return "mia_min_k"
-    if "Loss MIA" in key or "ZLIB MIA" in key:
-        return "mia_loss"
-    if "Truth Ratio" in key or key == "truth_ratio_distribution":
-        return "truth_ratio"
-    return "generation_rouge"
-
-
-@register_metric
-@unlearning_metric(
-    "mllmu_generation_feature",
-    required_inputs=lambda config: (config["feature"],),
-)
-def _metric_generation_feature(model, *, pre_compute, feature, **kwargs):
-    shared = pre_compute["generation"]["value_by_index"]
-    return metric_result(
-        {key: value for key, value in shared.items() if _feature(key) == feature}
-    )
-
-
-@register_metric
-@unlearning_metric("mllmu_generation_distribution")
-def _metric_generation_distribution(model, *, protocol, logs, enabled_splits, **kwargs):
-    protocol._add_generation_distribution_metrics(logs, enabled_splits)
-    return metric_result({})
-
-
-@register_metric
-@unlearning_metric("mllmu_summary")
-def _metric_summary(model, *, protocol, logs, **kwargs):
-    return {"agg_value": None, "summary": protocol._summarize(logs)}

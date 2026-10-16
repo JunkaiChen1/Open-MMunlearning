@@ -7,8 +7,7 @@ MLLMU_QA_retain:
       split: "train"
     image_key: "image"
     id_key: "ID"
-    qa_pairs_key: "metadata"
-    qa_question_key: "Question"
-    qa_answer_key: "Answer"
+    question_key: "question"
+    answer_key: "answer"
     max_length: 512
     tokenize: false

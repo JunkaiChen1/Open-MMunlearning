@@ -1,19 +1,13 @@
 # @package _global_
 
 defaults:
-  - /experiment/eval/mllm_eval/naming
-  - override /model: llava-1.5-7b-hf
+  - override /model: Qwen2.5-VL-3B-Instruct
   - override /eval: fiubench
-  - _self_
 
-ratio: 10
-eval_name: ${hydra:runtime.choices.eval}_ratio${ratio}
-checkpoint_path: null
-
-model:
-  adapter_path: ${checkpoint_path}
-  merge_adapter: true
+ratio: 5
 
 eval:
   fiubench:
     ratio: ${ratio}
+
+task_name: fiubench_eval

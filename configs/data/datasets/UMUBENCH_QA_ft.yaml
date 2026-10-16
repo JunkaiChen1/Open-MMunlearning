@@ -1,0 +1,14 @@
+UMUBENCH_QA_ft:
+  handler: ImageQADataset
+  args:
+    hf_args:
+      path: "parquet"
+      data_files: "${paths.data_dir}/finetune/umubench/train-00000-of-00001.parquet"
+      split: "train"
+    image_key: "image"
+    id_key: "ID"
+    qa_pairs_key: "metadata"
+    qa_question_key: "Question"
+    qa_answer_key: "Answer"
+    max_length: 2048
+    tokenize: false

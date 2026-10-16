@@ -13,7 +13,7 @@ defaults:
 mode: unlearn
 
 covubench_data_dir: ${paths.data_dir}/unlearn/covubench
-stage1_task_name: covubench_${model_name}_full
+stage1_task_name: covubench_llava_ft
 forget_split: forget_5
 retain_split: retain_95
 
@@ -25,7 +25,6 @@ data:
   forget:
     COVUBENCH_QA_forget:
       args:
-        idk_path: ${oc.select:forget_idk_path,null}
         hf_args:
           data_files: ${covubench_data_dir}/${forget_split}/train-*.parquet
   retain:
@@ -64,7 +63,7 @@ trainer:
     report_to: none
 
 eval: null
-task_name: covubench_${model_name}_${forget_split}_${method_name}
+task_name: covubench_unlearn_default
 
 peft:
   r: 64

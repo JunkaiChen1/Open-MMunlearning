@@ -9,6 +9,6 @@ template_args: # Used in creating prompts for the dataset. See src/data/utils.py
   apply_chat_template: False
   user_start_tag: "[INST] "
   user_end_tag: " [/INST]"
-  asst_start_tag: ""
+  asst_start_tag: "" 
   # ^the above link says this must be " ", but we observed this leads to very bad tokenization at the border which affects scores
   asst_end_tag: " "

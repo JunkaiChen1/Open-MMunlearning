@@ -1,8 +1,0 @@
-# @package _global_
-
-defaults:
-  - /experiment/eval/covubench/default
-  - /experiment/eval/finetuned
-  - _self_
-
-benchmark_name: covubench

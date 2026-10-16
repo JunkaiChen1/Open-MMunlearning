@@ -1,6 +1,0 @@
-# @package _global_
-
-defaults:
-  - /experiment/eval/mllmu/default
-  - /eval/mllmu_metrics: generation_exact_match
-  - _self_

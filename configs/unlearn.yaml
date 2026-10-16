@@ -11,12 +11,10 @@ defaults:
   - _self_
 
 trainer:
-  args:
+  args: 
     remove_unused_columns: False
 
 mode: unlearn
-model_name: ${hydra:runtime.choices.model}
-method_name: ${trainer.handler}
 task_name: ???
 
 compat:

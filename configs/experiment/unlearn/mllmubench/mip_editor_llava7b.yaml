@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/mllmubench/default
+  - override /model: LLaVA_Vanilla_7b
+  - override /trainer: MIPEditor
+  - override /peft: lora
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      include_text_only: false
+
+trainer:
+  args:
+    num_train_epochs: 1
+
+task_name: mip_editor_llava7b

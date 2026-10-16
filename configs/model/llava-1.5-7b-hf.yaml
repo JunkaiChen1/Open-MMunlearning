@@ -1,9 +1,9 @@
 model_handler: LlavaForConditionalGeneration
 model_args:
-  pretrained_model_name_or_path: "${oc.env:MMU_MODEL_ROOT,llava-hf}/llava-1.5-7b-hf"
+  pretrained_model_name_or_path: "llava-hf/llava-1.5-7b-hf"
   torch_dtype: float16
 tokenizer_args:
-  pretrained_model_name_or_path: ${model.model_args.pretrained_model_name_or_path}
+  pretrained_model_name_or_path: "llava-hf/llava-1.5-7b-hf"
 template_args:
   apply_chat_template: true
   system_prompt: ""

@@ -49,4 +49,4 @@ peft:
   r: 64
   lora_alpha: 128
 
-task_name: covubench_${model_name}_full
+task_name: covubench_llava_ft

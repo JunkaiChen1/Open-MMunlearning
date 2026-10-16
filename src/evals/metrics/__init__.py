@@ -1,107 +1,75 @@
-"""Metric registration and YAML composition, following OpenUnlearning."""
+from typing import Dict
+from omegaconf import DictConfig
+from evals.metrics.base import UnlearningMetric
+from evals.metrics.memorization import (
+    probability,
+    probability_w_options,
+    rouge,
+    truth_ratio,
+    extraction_strength,
+    exact_memorization,
+)
+from evals.metrics.privacy import ks_test, privleak, rel_diff
+from evals.metrics.mia import (
+    mia_loss,
+    mia_min_k,
+    mia_min_k_plus_plus,
+    mia_gradnorm,
+    mia_zlib,
+    mia_reference,
+)
+from evals.metrics.utility import (
+    hm_aggregate,
+    classifier_prob,
+)
 
-from .base import UnlearningMetric
-
-METRICS_REGISTRY = {}
+METRICS_REGISTRY: Dict[str, UnlearningMetric] = {}
 
 
-def register_metric(metric):
-    if metric.name in METRICS_REGISTRY:
-        raise ValueError(f"Metric {metric.name!r} is already registered.")
+def _register_metric(metric):
     METRICS_REGISTRY[metric.name] = metric
+
+
+def _get_single_metric(name: str, metric_cfg, **kwargs):
+    metric_handler_name = metric_cfg.get("handler")
+    assert metric_handler_name is not None, ValueError(f"{name} handler not set")
+    metric = METRICS_REGISTRY.get(metric_handler_name)
+    if metric is None:
+        raise NotImplementedError(
+            f"{metric_handler_name} not implemented or not registered"
+        )
+    pre_compute_cfg = metric_cfg.get("pre_compute", {})
+    pre_compute_metrics = get_metrics(pre_compute_cfg, **kwargs)
+    metric.set_pre_compute_metrics(pre_compute_metrics)
     return metric
 
 
-def get_metrics(configs):
+def get_metrics(metric_cfgs: DictConfig, **kwargs):
     metrics = {}
-    for name, config in configs.items():
-        handler = config.get("handler")
-        if handler not in METRICS_REGISTRY:
-            raise ValueError(f"Unknown metric handler: {handler!r}")
-        prototype = METRICS_REGISTRY[handler]
-        metrics[name] = UnlearningMetric(
-            prototype.name,
-            prototype._metric_fn,
-            get_metrics(config.get("pre_compute", {})),
-            required_inputs=prototype.required_inputs,
-        )
+    for metric_name, metric_cfg in metric_cfgs.items():
+        metrics[metric_name] = _get_single_metric(metric_name, metric_cfg, **kwargs)
     return metrics
 
 
-def get_input_requirements(configs):
-    required = set()
-    for config in configs.values():
-        prototype = METRICS_REGISTRY[config["handler"]]
-        required.update(prototype.input_requirements(config))
-        required.update(get_input_requirements(config.get("pre_compute", {})))
-    return required
+# Register metrics here
+_register_metric(probability)
+_register_metric(probability_w_options)
+_register_metric(rouge)
+_register_metric(truth_ratio)
+_register_metric(ks_test)
+_register_metric(hm_aggregate)
+_register_metric(privleak)
+_register_metric(rel_diff)
+_register_metric(exact_memorization)
+_register_metric(extraction_strength)
 
+# Register MIA metrics
+_register_metric(mia_loss)
+_register_metric(mia_min_k)
+_register_metric(mia_min_k_plus_plus)
+_register_metric(mia_gradnorm)
+_register_metric(mia_zlib)
+_register_metric(mia_reference)
 
-# Import each metric to register its YAML handler.
-from . import (  # noqa: E402,F401
-    accuracy,
-    choice_accuracy,
-    forget_quality,
-    gpt_score,
-    gradnorm,
-    mia_auc,
-    mmvet_match,
-    model_utility,
-    reference_loss,
-    refusal_rate,
-    statistics,
-    target_recovery,
-    unsafe_rate,
-    vqa,
-)  # noqa: E402,F401
-from ._min_k_utils import token_log_probability_statistics  # noqa: E402,F401
-from .answer_probability import (  # noqa: E402
-    AnswerProbabilityScorer,  # noqa: E402,F401
-    ContrastiveProbabilityScorer,  # noqa: E402,F401
-)
-
-# Public MIA execution entry points share the metric implementations.
-from .base import (  # noqa: E402
-    AllAttacks,  # noqa: F401
-    Attack,  # noqa: F401
-    BaseScorer,  # noqa: E402,F401
-    Scorer,  # noqa: E402,F401
-    ScoreResult,  # noqa: E402,F401
-)
-from .bleu import BleuScorer  # noqa: E402,F401
-from .contains import ContainsScorer  # noqa: E402,F401
-from .exact_match import ExactMatchScorer  # noqa: E402,F401
-from .gradnorm import GradNormAttack  # noqa: E402,F401
-from .js import JensenShannonDistanceScorer  # noqa: E402,F401
-from .keyword_recall import (  # noqa: E402
-    KeywordRecallScorer,  # noqa: E402,F401
-    parse_keywords,  # noqa: E402,F401
-)
-from .ks import TwoSampleKSScorer  # noqa: E402,F401
-from .loss_mia import (  # noqa: E402
-    LOSSAttack,  # noqa: E402,F401
-    LossMIAScorer,  # noqa: E402,F401
-)
-from .mia_auc import get_attacker, run_mia_auc  # noqa: E402,F401
-from .min_k import (  # noqa: E402
-    MinKProbAttack,  # noqa: E402,F401
-    MinKScorer,  # noqa: E402,F401
-    StandardMinKScorer,  # noqa: E402,F401
-)
-from .min_k_plus_plus import (  # noqa: E402
-    MinKPlusPlusAttack,  # noqa: E402,F401
-    MinKPlusPlusScorer,  # noqa: E402,F401
-    StandardMinKPlusPlusScorer,  # noqa: E402,F401
-)
-from .reference_loss import ReferenceAttack  # noqa: E402,F401
-from .rouge import RougeScorer  # noqa: E402,F401
-from .semantic import SemanticDissimilarityScorer  # noqa: E402,F401
-from .truth_ratio import (  # noqa: E402
-    PerturbationTruthRatioScorer,  # noqa: E402,F401
-    TruthRatioTransformScorer,  # noqa: E402,F401
-)
-from .utils import normalize_text  # noqa: E402,F401
-from .zlib_mia import (  # noqa: E402
-    ZLIBAttack,  # noqa: E402,F401
-    ZlibMIAScorer,  # noqa: E402,F401
-)
+# Register Utility metrics
+_register_metric(classifier_prob)

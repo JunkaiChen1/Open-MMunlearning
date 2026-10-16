@@ -1,4 +1,0 @@
-# @package eval.fiubench.metrics.task_evaluation
-
-handler: fiubench_task
-output: merge

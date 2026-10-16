@@ -2,14 +2,8 @@
 
 import re
 import torch
-from torch.nn.parallel import DistributedDataParallel
-from transformers.trainer_pt_utils import nested_detach
+import deepspeed
 from trainer.unlearn.grad_diff import GradDiff
-
-try:
-    import deepspeed
-except ImportError:
-    deepspeed = None
 
 
 class RMU(GradDiff):
@@ -73,7 +67,7 @@ class RMU(GradDiff):
     def _get_matching_module(self, model, module_regex):
         """Returns a single module matching the given regex from a DeepSpeed/DDP-wrapped model."""
         # Handle DeepSpeed and DDP-wrapped models by accessing the underlying module
-        if deepspeed is not None and isinstance(model, deepspeed.DeepSpeedEngine):
+        if isinstance(model, deepspeed.DeepSpeedEngine):
             model = model.module  # Extract the actual PyTorch model inside
 
         if isinstance(module_regex, str):
@@ -122,29 +116,14 @@ class RMU(GradDiff):
             return None
 
         hook_handle = module.register_forward_hook(hook)
-        output_handle = None
-        expose_activation = isinstance(model, DistributedDataParallel) and not no_grad
-        if expose_activation:
-            # DDP must discover used parameters from the activation loss, not
-            # from the unused language-model logits returned by the forward.
-            def expose_output(_module, _inputs, outputs):
-                if not cache:
-                    raise RuntimeError("The selected RMU module did not run during model forward")
-                return cache[0], nested_detach(outputs)
-
-            output_handle = model.module.register_forward_hook(expose_output)
         try:
             with torch.set_grad_enabled(not no_grad):
                 outputs = model(**inputs)
         finally:
             hook_handle.remove()
-            if output_handle is not None:
-                output_handle.remove()
 
         if not cache:
             raise RuntimeError("The selected RMU module did not run during model forward")
-        if expose_activation:
-            return outputs
         return cache[0], outputs
 
     def get_control_vector(self, dim):

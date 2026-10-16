@@ -1,13 +1,13 @@
 model_handler: ProbedGemma3ForConditionalGeneration
 model_args:
-  pretrained_model_name_or_path: "${oc.env:MMU_MODEL_ROOT,google}/gemma-3-12b-it"
+  pretrained_model_name_or_path: "google/gemma-3-12b-it"
   attn_implementation: eager
   torch_dtype: bfloat16
   n_layers: 24
   freeze_base_model: true
   head_pretrained_model_name_or_path: null
 tokenizer_args:
-  pretrained_model_name_or_path: ${model.model_args.pretrained_model_name_or_path}
+  pretrained_model_name_or_path: "google/gemma-3-12b-it"
 template_args:
   apply_chat_template: true
   system_prompt: ""

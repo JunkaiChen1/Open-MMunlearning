@@ -1,0 +1,35 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/mllmubench/default
+  - override /model: LLaVA_Vanilla_7b
+  - override /trainer: SMFA
+  - override /peft: lora
+
+collator:
+  DataCollatorForMultimodalQADataset:
+    args:
+      include_text_only: true
+
+data:
+  forget:
+    MLLMU_QA_forget:
+      args:
+        # SMFA needs an external IDK response file for its alternate targets.
+        idk_path: ${oc.env:OPEN_UNLEARNING_IDK_PATH,null}
+
+model:
+  model_args:
+    # SMFA runs six adapter forwards per paired batch. bfloat16 avoids the
+    # overflow observed with LLaVA-1.5 in float16.
+    torch_dtype: bfloat16
+
+trainer:
+  args:
+    per_device_train_batch_size: 2
+    learning_rate: 1e-4
+    num_train_epochs: 5
+    bf16: true
+    fp16: false
+
+task_name: smfa_llava7b

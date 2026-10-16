@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from PIL import Image
 from transformers import AutoProcessor
 
 from evals.base import Evaluator
-from evals.metrics import (
+from evals.scorers import (
     AnswerProbabilityScorer,
     ContrastiveProbabilityScorer,
     KeywordRecallScorer,
@@ -23,17 +24,8 @@ from evals.metrics import (
     TruthRatioTransformScorer,
     TwoSampleKSScorer,
     ZlibMIAScorer,
-    register_metric,
 )
-from evals.metrics.answer_probability import normalize_ground_truth_loss
-from evals.metrics.base import metric_result, unlearning_metric
-from evals.metrics.forget_quality import fiu_quality
-from evals.metrics.gpt_score import fiubench_gpt_question, fiubench_gpt_score
-from evals.metrics.model_utility import fiu_utility
-from evals.metrics.rouge import fiu_rouge_recall
-from evals.metrics.statistics import fiu_statistics
-from evals.metrics.utils import fiu_flatten_numeric, fiu_values_array
-from evals.utils.judge import FIUBenchJudge
+
 
 logger = logging.getLogger("evaluator")
 IGNORE_INDEX = -100
@@ -45,12 +37,13 @@ class FIUBenchEvaluator(Evaluator):
     The FIUBench release evaluates QA pairs from the first 400 identities,
     filtered by `split.json`, and reports generation, loss-based probability
     statistics, perturbation truth ratios, ROUGE recall, Exact Match, and
-    optional Min-K MIA and GPT scores. This implementation keeps those benchmark
-    rules while using OpenUnlearning's model/processor loading path.
+    optional Min-K MIA scores. This implementation keeps those benchmark rules
+    while using OpenUnlearning's model/processor loading path.
     """
 
     def __init__(self, eval_cfg, **kwargs):
-        super().__init__("FIUBENCH", eval_cfg, **kwargs)
+        self.name = "FIUBENCH"
+        self.eval_cfg = eval_cfg
         self.processor = None
         self._records_cache = {}
         self._splits = None
@@ -73,6 +66,10 @@ class FIUBenchEvaluator(Evaluator):
         self._warned_gpt = False
         self._active_model_family = None
         self._active_prompt_style = None
+
+    def prepare_model(self, model):
+        model.eval()
+        return model
 
     def _to_container(self, value, default=None):
         if value is None:
@@ -153,10 +150,9 @@ class FIUBenchEvaluator(Evaluator):
 
     def _raw_prompt_fields(self):
         """Return the model tags used by FIUBench's original data module."""
-        family = (
-            self._active_model_family
-            or str(self.eval_cfg.get("model_family", "")).lower()
-        )
+        family = self._active_model_family or str(
+            self.eval_cfg.get("model_family", "")
+        ).lower()
         if family in {"llava-phi", "llava_phi"}:
             return {
                 "system_prompt": "",
@@ -227,7 +223,7 @@ class FIUBenchEvaluator(Evaluator):
         normalized = str(split).replace("_", "")
         if not normalized.startswith(prefix):
             return None
-        suffix = normalized[len(prefix) :]
+        suffix = normalized[len(prefix):]
         return int(suffix) if suffix.isdigit() else None
 
     def _filtered_records(self, data_path, split):
@@ -307,9 +303,7 @@ class FIUBenchEvaluator(Evaluator):
             values.append(self._format_question(value))
         if values:
             return values
-        if key != "question" and self.eval_cfg.get(
-            "fallback_empty_question_to_question", True
-        ):
+        if key != "question" and self.eval_cfg.get("fallback_empty_question_to_question", True):
             return self._question_values(qa, "question")
         return []
 
@@ -464,12 +458,12 @@ class FIUBenchEvaluator(Evaluator):
                 image_input = images[0] if len(images) == 1 else images
                 if hasattr(image_processor, "preprocess"):
                     inputs.update(
-                        image_processor.preprocess(image_input, return_tensors="pt")
+                        image_processor.preprocess(
+                            image_input, return_tensors="pt"
+                        )
                     )
                 else:
-                    inputs.update(
-                        image_processor(images=image_input, return_tensors="pt")
-                    )
+                    inputs.update(image_processor(images=image_input, return_tensors="pt"))
             return inputs
         kwargs = {
             "text": text,
@@ -553,14 +547,10 @@ class FIUBenchEvaluator(Evaluator):
 
     def _answer_loss(self, model, tokenizer, sample, answer, compute_token_stats=False):
         full_text, images = self._build_text_and_images(sample, model, answer=answer)
-        prompt_text, prompt_images = self._build_text_and_images(
-            sample, model, answer=None
-        )
+        prompt_text, prompt_images = self._build_text_and_images(sample, model, answer=None)
         full_batch = self._prepare_inputs(full_text, images, tokenizer)
         prompt_batch = self._prepare_inputs(prompt_text, prompt_images, tokenizer)
-        labels = self._make_labels(
-            full_batch, prompt_batch, tokenizer, full_text=full_text
-        )
+        labels = self._make_labels(full_batch, prompt_batch, tokenizer, full_text=full_text)
         num_tokens = (labels != IGNORE_INDEX).sum(-1)
         if num_tokens.sum().item() == 0:
             return None
@@ -580,9 +570,7 @@ class FIUBenchEvaluator(Evaluator):
         result = {
             "prompt_text": prompt_text,
             "loss": float(loss[0].detach().cpu().item()),
-            "avg_loss": float(
-                (loss[0] / num_tokens[0].to(loss.device)).detach().cpu().item()
-            ),
+            "avg_loss": float((loss[0] / num_tokens[0].to(loss.device)).detach().cpu().item()),
             "num_tokens": int(num_tokens[0].detach().cpu().item()),
         }
         if compute_token_stats:
@@ -592,13 +580,7 @@ class FIUBenchEvaluator(Evaluator):
 
     def _clean_answer(self, text):
         text = str(text)
-        for marker in (
-            "ASSISTANT:",
-            "Assistant:",
-            "assistant:",
-            "Answer:",
-            "### Answer:",
-        ):
+        for marker in ("ASSISTANT:", "Assistant:", "assistant:", "Answer:", "### Answer:"):
             if marker in text:
                 text = text.split(marker)[-1]
         text = text.strip()
@@ -626,7 +608,9 @@ class FIUBenchEvaluator(Evaluator):
                 # This is the model-specific normalization in FIUBench's
                 # run_generation helper after decoding the labelled prompt.
                 question_start = self._raw_prompt_fields()["question_start"]
-                prompt = prompt.replace(question_start, f"{question_start} <image>")
+                prompt = prompt.replace(
+                    question_start, f"{question_start} <image>"
+                )
                 prompt = prompt.replace("<|user|>", "<|user|>\n")
                 prompt = prompt.replace("<|end|>", "<|end|>\n")
 
@@ -658,9 +642,9 @@ class FIUBenchEvaluator(Evaluator):
                 )
             sequences = outputs.sequences if hasattr(outputs, "sequences") else outputs
             generated_ids = sequences[:, generation_inputs["input_ids"].shape[-1] :]
-            generated = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[
-                0
-            ]
+            generated = tokenizer.batch_decode(
+                generated_ids, skip_special_tokens=True
+            )[0]
             # This exact slice is used in the upstream run_generation helper.
             return prompt, generated[: generated.find(".") + 1]
 
@@ -669,20 +653,13 @@ class FIUBenchEvaluator(Evaluator):
         device = self._model_device(model)
         inputs = self._move_to_device(inputs, device)
         input_len = inputs["input_ids"].shape[-1]
-        generation_args = self._to_container(
-            self.eval_cfg.get("generation_args", {}), {}
-        )
-        if (
-            "pad_token_id" not in generation_args
-            and getattr(tokenizer, "eos_token_id", None) is not None
-        ):
+        generation_args = self._to_container(self.eval_cfg.get("generation_args", {}), {})
+        if "pad_token_id" not in generation_args and getattr(tokenizer, "eos_token_id", None) is not None:
             generation_args["pad_token_id"] = tokenizer.eos_token_id
         with torch.no_grad():
             outputs = model.generate(**inputs, **generation_args)
         sequences = outputs.sequences if hasattr(outputs, "sequences") else outputs
-        generated_ids = (
-            sequences[:, input_len:] if sequences.shape[-1] > input_len else sequences
-        )
+        generated_ids = sequences[:, input_len:] if sequences.shape[-1] > input_len else sequences
         processor = self._load_processor()
         decoder = processor.decode if hasattr(processor, "decode") else tokenizer.decode
         generated = decoder(generated_ids[0], skip_special_tokens=True)
@@ -693,7 +670,18 @@ class FIUBenchEvaluator(Evaluator):
         return 0.0 if value is None else float(value)
 
     def _rouge_recall(self, generated_outputs, ground_truths, indices):
-        return fiu_rouge_recall(self, generated_outputs, ground_truths, indices)
+        rouge1_recall = {}
+        rouge_l_recall = {}
+        for generated, ground_truth, index in zip(
+            generated_outputs, ground_truths, indices
+        ):
+            rouge_text = str(generated)
+            if "." in rouge_text:
+                rouge_text = rouge_text[: rouge_text.find(".")]
+            scores = self._rouge_scorer.score(rouge_text, str(ground_truth)).details
+            rouge1_recall[str(index)] = scores["rouge1"]
+            rouge_l_recall[str(index)] = scores["rougeL"]
+        return {"rouge1_recall": rouge1_recall, "rougeL_recall": rouge_l_recall}
 
     def _min_k_scores(self, loss_result):
         if "token_log_probs" not in loss_result:
@@ -765,7 +753,20 @@ class FIUBenchEvaluator(Evaluator):
         return logs
 
     def _normalize_gt_loss(self, logs):
-        return normalize_ground_truth_loss(logs, self._contrastive_probability_scorer)
+        if "avg_gt_loss" not in logs or "average_perturb_loss" not in logs:
+            return
+        normalized = {}
+        for index, avg_gt_loss in logs["avg_gt_loss"].items():
+            if index not in logs["average_perturb_loss"]:
+                continue
+            probability = self._contrastive_probability_scorer.score(
+                avg_gt_loss,
+                logs["average_perturb_loss"][index],
+            ).value
+            normalized[index] = (
+                float("inf") if probability == 0 else float(-math.log(probability))
+            )
+        logs["normalized_gt_loss"] = normalized
 
     def _evaluate_ape(self, samples, model, tokenizer, answer_key):
         logs = {"exact_match": []}
@@ -778,9 +779,7 @@ class FIUBenchEvaluator(Evaluator):
             prompt, generated = self._generate(
                 model, tokenizer, sample, answer=answers[0]
             )
-            score = self._exact_match(
-                generated.lower(), sample["qa"].get("keywords", [])
-            )
+            score = self._exact_match(generated.lower(), sample["qa"].get("keywords", []))
             logs["exact_match"].append(score)
             if self.eval_cfg.get("save_generated_text", False):
                 logs["generated_text"][str(sample["index"])] = [
@@ -820,19 +819,8 @@ class FIUBenchEvaluator(Evaluator):
             logs["zlib"] = []
         if "exact_match" in metrics:
             logs["exact_match"] = []
-        gpt_judge = None
         if "gpt" in metrics:
-            if self.eval_cfg.get("enable_gpt", False):
-                judge_config = self._to_container(self.eval_cfg.get("judge", {}), {})
-                gpt_judge = FIUBenchJudge({**judge_config, "enabled": True})
-                logs["gpt"] = []
-            else:
-                logs["gpt"] = None
-                if not self._warned_gpt:
-                    logger.warning(
-                        "FIUBench GPT metric requested, but enable_gpt=false; writing null."
-                    )
-                    self._warned_gpt = True
+            logs["gpt"] = []
 
         generated_outputs = []
         ground_truths = []
@@ -842,18 +830,14 @@ class FIUBenchEvaluator(Evaluator):
             index = str(sample["index"])
             answers = self._qa_values(sample["qa"], answer_key, fallback_key="answer")
             if not answers:
-                logger.warning(
-                    "Skipping FIUBench sample %s due to missing answer.", index
-                )
+                logger.warning("Skipping FIUBench sample %s due to missing answer.", index)
                 continue
             answer = answers[0]
             loss_result = self._answer_loss(
                 model, tokenizer, sample, answer, compute_token_stats=compute_mink
             )
             if loss_result is None:
-                logger.warning(
-                    "Skipping FIUBench sample %s due to empty labels.", index
-                )
+                logger.warning("Skipping FIUBench sample %s due to empty labels.", index)
                 continue
             prompt, generated = self._generate(model, tokenizer, sample, answer=answer)
 
@@ -888,30 +872,16 @@ class FIUBenchEvaluator(Evaluator):
 
             if "exact_match" in metrics:
                 logs["exact_match"].append(
-                    self._exact_match(
-                        generated.lower(), sample["qa"].get("keywords", [])
-                    )
+                    self._exact_match(generated.lower(), sample["qa"].get("keywords", []))
                 )
 
-            if gpt_judge is not None:
-                question = sample["question"]
-                if self._active_prompt_style == "raw":
-                    fields = self._raw_prompt_fields()
-                    question = fiubench_gpt_question(
-                        prompt,
-                        question_start=fields["question_start"],
-                        question_end=self.eval_cfg.get("question_end_tag", ""),
-                        system=fields["system_prompt"],
-                        answer_tag=fields["answer_tag"],
+            if "gpt" in metrics:
+                if not self.eval_cfg.get("enable_gpt", False) and not self._warned_gpt:
+                    logger.warning(
+                        "FIUBench GPT metric requested, but enable_gpt=false; writing 0.0 scores."
                     )
-                logs["gpt"].append(
-                    fiubench_gpt_score(
-                        gpt_judge,
-                        question=question,
-                        answer=answer,
-                        prediction=generated,
-                    )
-                )
+                    self._warned_gpt = True
+                logs["gpt"].append(0.0)
 
         logs.update(self._rouge_recall(generated_outputs, ground_truths, indices))
         if normalize_gt:
@@ -937,9 +907,7 @@ class FIUBenchEvaluator(Evaluator):
             retain_split = self.eval_cfg.get("retain_split", None) or f"retain{ratio}"
             split_list = [forget_split, retain_split]
         if not split_list:
-            raise ValueError(
-                "eval.fiubench.split_list must contain at least one split."
-            )
+            raise ValueError("eval.fiubench.split_list must contain at least one split.")
 
         specs = []
         for index, split in enumerate(split_list):
@@ -954,30 +922,22 @@ class FIUBenchEvaluator(Evaluator):
                         self.eval_cfg.get("question_key"), index, "question"
                     ),
                     "robust_question_key": self._value_at(
-                        self.eval_cfg.get("robust_question_key"),
-                        index,
-                        "paraphrased_question",
+                        self.eval_cfg.get("robust_question_key"), index, "paraphrased_question"
                     ),
                     "answer_key": self._value_at(
                         self.eval_cfg.get("answer_key"), index, "answer"
                     ),
                     "base_answer_key": self._value_at(
-                        self.eval_cfg.get("base_answer_key"),
-                        index,
-                        "paraphrased_answer",
+                        self.eval_cfg.get("base_answer_key"), index, "paraphrased_answer"
                     ),
                     "perturbed_answer_key": self._value_at(
-                        self.eval_cfg.get("perturbed_answer_key"),
-                        index,
-                        "perturbed_answer",
+                        self.eval_cfg.get("perturbed_answer_key"), index, "perturbed_answer"
                     ),
                     "eval_task": self._value_at(
                         self.eval_cfg.get("eval_task"), index, f"eval_{split}_log"
                     ),
                     "metrics": self._normalize_metrics(
-                        self._value_at(
-                            self.eval_cfg.get("robust_eval"), index, ["rouge"]
-                        )
+                        self._value_at(self.eval_cfg.get("robust_eval"), index, ["rouge"])
                     ),
                 }
             )
@@ -1013,21 +973,220 @@ class FIUBenchEvaluator(Evaluator):
         )
 
     def _flatten_numeric(self, value):
-        return fiu_flatten_numeric(value)
+        if isinstance(value, dict):
+            values = value.values()
+        elif isinstance(value, list):
+            values = value
+        else:
+            values = [value]
+        flattened = []
+        for item in values:
+            if isinstance(item, (list, tuple)):
+                flattened.extend(float(x) for x in item if isinstance(x, (int, float)))
+            elif isinstance(item, (int, float)):
+                flattened.append(float(item))
+        return [x for x in flattened if not math.isnan(x)]
 
     def _upstream_values(self, task_logs, key):
-        return fiu_values_array(task_logs, key)
+        value = task_logs.get(key, {})
+        if isinstance(value, dict):
+            value = list(value.values())
+        return np.asarray(value, dtype=float)
 
     def _upstream_model_utility(self, logs):
-        return fiu_utility(self, logs)
+        """Reproduce FIUBench's aggregate_eval_stat.get_model_utility."""
+        output = {}
+        names = {
+            "eval_forget_log.json": "Forget",
+            "eval_retain_log.json": "Retain",
+        }
+        for task_file, task_logs in logs.items():
+            if task_file not in names or not isinstance(task_logs, dict):
+                continue
+            required = {
+                "avg_gt_loss",
+                "average_perturb_loss",
+                "avg_paraphrased_loss",
+                "rougeL_recall",
+            }
+            if not required.issubset(task_logs):
+                continue
+            true_losses = self._upstream_values(task_logs, "avg_gt_loss")
+            if true_losses.size == 0:
+                continue
+            true_probs = np.asarray(
+                [
+                    self._answer_probability_scorer.score(loss).value
+                    for loss in true_losses
+                ],
+                dtype=float,
+            )
+            if "eval_forget_log" in task_file:
+                probability = float(np.mean(true_probs))
+            else:
+                false_losses = self._upstream_values(task_logs, "average_perturb_loss")
+                if false_losses.ndim != 2 or false_losses.shape[0] != true_losses.size:
+                    continue
+                probability = float(
+                    np.mean(
+                        [
+                            self._contrastive_probability_scorer.score(
+                                target_loss, competing_losses
+                            ).value
+                            for target_loss, competing_losses in zip(
+                                true_losses, false_losses
+                            )
+                        ]
+                    )
+                )
+            name = names[task_file]
+            output[f"Prob. {name}"] = probability
+
+            rouge_values = self._upstream_values(task_logs, "rougeL_recall")
+            if rouge_values.size:
+                output[f"ROUGE {name}"] = float(np.mean(rouge_values))
+
+            paraphrase = self._upstream_values(task_logs, "avg_paraphrased_loss")
+            perturbed = self._upstream_values(task_logs, "average_perturb_loss")
+            if (
+                paraphrase.size
+                and perturbed.ndim == 2
+                and perturbed.shape[0] == paraphrase.size
+            ):
+                ratio = np.exp(perturbed.mean(axis=-1) - paraphrase)
+                mode = "forget" if "forget" in task_file else "retain"
+                transformed = [
+                    self._truth_ratio_transform_scorer.score(value, mode=mode).value
+                    for value in ratio
+                ]
+                output[f"Truth Ratio {name}"] = float(np.mean(transformed))
+
+            if "retain" in task_file and task_logs.get("gpt"):
+                output[f"GPT {name}"] = float(np.mean(task_logs["gpt"]))
+            if "retain" in task_file and task_logs.get("exact_match"):
+                output[f"EM {name}"] = float(np.mean(task_logs["exact_match"]))
+
+        utility_values = [value for key, value in output.items() if "Forget" not in key]
+        if utility_values:
+            if any(value == 0 for value in utility_values):
+                output["Model Utility"] = 0.0
+            else:
+                output["Model Utility"] = float(
+                    len(utility_values) / sum(1.0 / value for value in utility_values)
+                )
+        return output
 
     def _upstream_forget_quality(self, logs, retained_logs):
-        return fiu_quality(self, logs, retained_logs)
+        """Reproduce FIUBench's aggregate_eval_stat.get_forget_quality."""
+        task_key = "eval_forget_log.json"
+        if task_key not in logs:
+            return {}
+        unlearned = logs[task_key]
+        retained = retained_logs.get(task_key, retained_logs)
+        required = {"avg_paraphrased_loss", "average_perturb_loss"}
+        if not required.issubset(unlearned) or not required.issubset(retained):
+            return {}
 
-    def _summary_statistics(self, logs):
-        return fiu_statistics(self, logs)
+        output = {}
+        for source_key, output_key in (
+            ("mink", "Mink"),
+            ("mink++", "Mink++"),
+            ("exact_match", "Exact Match"),
+        ):
+            values = unlearned.get(source_key)
+            if values:
+                output[output_key] = float(np.mean(values))
 
-    def _evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+        unlearned_paraphrase = self._upstream_values(unlearned, "avg_paraphrased_loss")
+        unlearned_perturbed = self._upstream_values(unlearned, "average_perturb_loss")
+        retained_paraphrase = self._upstream_values(retained, "avg_paraphrased_loss")
+        retained_perturbed = self._upstream_values(retained, "average_perturb_loss")
+        if (
+            unlearned_perturbed.ndim != 2
+            or retained_perturbed.ndim != 2
+            or not unlearned_paraphrase.size
+            or not retained_paraphrase.size
+        ):
+            return output
+        unlearned_truth = np.exp(
+            unlearned_perturbed.mean(axis=-1) - unlearned_paraphrase
+        )
+        retained_truth = np.exp(retained_perturbed.mean(axis=-1) - retained_paraphrase)
+        try:
+            ks_result = self._ks_scorer.score(unlearned_truth, retained_truth)
+        except ImportError:
+            logger.warning("scipy is not installed; skipping FIUBench KS metrics.")
+            return output
+        output.update(
+            {
+                "Forget Quality": float(ks_result.details["pvalue"]),
+                "KS Test PVal Forget": float(ks_result.details["pvalue"]),
+                "KS Test Forget": float(ks_result.details["statistic"]),
+            }
+        )
+        return output
+
+    def _load_retain_result(self):
+        path = self.eval_cfg.get("retain_result", None)
+        if path in (None, "", "null", "None"):
+            return None
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def summarize(self, logs):
+        summary = {}
+        for task_name, task_logs in logs.items():
+            if not isinstance(task_logs, dict):
+                continue
+            for metric_name, value in task_logs.items():
+                if metric_name == "generated_text":
+                    continue
+                values = self._flatten_numeric(value)
+                if not values:
+                    continue
+                summary[f"{task_name}/{metric_name}/mean"] = float(np.mean(values))
+                summary[f"{task_name}/{metric_name}/count"] = len(values)
+
+            if "avg_gt_loss" in task_logs:
+                avg_gt_loss = np.array(self._flatten_numeric(task_logs["avg_gt_loss"]))
+                if avg_gt_loss.size:
+                    summary[f"{task_name}/gt_probability/mean"] = float(
+                        np.mean(
+                            [
+                                self._answer_probability_scorer.score(loss).value
+                                for loss in avg_gt_loss
+                            ]
+                        )
+                    )
+            if (
+                "avg_paraphrased_loss" in task_logs
+                and "average_perturb_loss" in task_logs
+            ):
+                paraphrased = np.array(
+                    list(task_logs["avg_paraphrased_loss"].values()), dtype=float
+                )
+                perturbed = np.array(
+                    list(task_logs["average_perturb_loss"].values()), dtype=float
+                )
+                if paraphrased.size and perturbed.size:
+                    perturbed_mean = perturbed.mean(axis=-1)
+                    ratio = np.exp(perturbed_mean - paraphrased)
+                    mode = "forget" if "forget" in task_name else "retain"
+                    transformed = [
+                        self._truth_ratio_transform_scorer.score(value, mode=mode).value
+                        for value in ratio
+                    ]
+                    summary[f"{task_name}/aggregate_truth_ratio/mean"] = float(
+                        np.mean(transformed)
+                    )
+        summary.update(self._upstream_model_utility(logs))
+        retained_logs = self._load_retain_result()
+        if retained_logs is not None:
+            summary.update(self._upstream_forget_quality(logs, retained_logs))
+        return summary
+
+    def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
+        overwrite = self.eval_cfg.overwrite if overwrite is None else overwrite
         model = self.prepare_model(model)
         tokenizer = kwargs.get("tokenizer", None)
         if tokenizer is None:
@@ -1039,39 +1198,32 @@ class FIUBenchEvaluator(Evaluator):
             self.eval_cfg.output_dir = output_dir
         logs_file_path = self.get_logs_file_path(output_dir)
         summary_file_path = self.get_logs_file_path(output_dir, suffix="SUMMARY")
-        logs = {}
+        logs = self.load_logs_from_file(logs_file_path) if not overwrite else {}
 
         self._active_model_family = self._model_family(model)
         self._active_prompt_style = self._effective_prompt_style(model)
 
         logger.info("***** Running %s evaluation suite *****", self.name)
         logger.info("Fine-grained evaluations will be saved to: %s", logs_file_path)
-        logger.info(
-            "Aggregated evaluations will be summarised in: %s", summary_file_path
-        )
+        logger.info("Aggregated evaluations will be summarised in: %s", summary_file_path)
 
         for spec in self._task_specs():
-            names = list(self.metric_names(task=spec["eval_task"], split=spec["split"]))
-            if not names:
-                continue
             task_key = f"{spec['eval_task']}.json"
             split_file_path = os.path.join(
                 output_dir, f"{spec['split']}_{spec['eval_task']}.json"
             )
-            split_logs = {}
-            for metric_name, metric in self.evaluate_metrics(
-                model,
-                scope=task_key,
-                task=spec["eval_task"],
-                split=spec["split"],
-                spec=spec,
-                tokenizer=tokenizer,
-                logs=split_logs,
-            ):
-                self.merge_metric_result(split_logs, metric_name, metric)
-            os.makedirs(output_dir, exist_ok=True)
-            with open(split_file_path, "w", encoding="utf-8") as handle:
-                json.dump(split_logs, handle, indent=4)
+            if not overwrite and task_key in logs and logs[task_key]:
+                logger.info("Skipping %s, already evaluated.", task_key)
+                continue
+            if os.path.exists(split_file_path) and not overwrite:
+                logger.info("Loading existing FIUBench split log from %s", split_file_path)
+                with open(split_file_path, "r", encoding="utf-8") as handle:
+                    split_logs = json.load(handle)
+            else:
+                split_logs = self._evaluate_split(spec, model, tokenizer)
+                os.makedirs(output_dir, exist_ok=True)
+                with open(split_file_path, "w", encoding="utf-8") as handle:
+                    json.dump(split_logs, handle, indent=4)
             logs[task_key] = split_logs
             self.save_logs(logs, logs_file_path)
             self.save_logs(self.summarize(logs), summary_file_path)
@@ -1083,9 +1235,3 @@ class FIUBenchEvaluator(Evaluator):
         summary = self.summarize(logs)
         self.save_logs(summary, summary_file_path)
         return summary
-
-
-@register_metric
-@unlearning_metric("fiubench_task")
-def _metric_task(model, *, protocol, spec, tokenizer, **kwargs):
-    return metric_result(protocol._evaluate_split(spec, model, tokenizer))

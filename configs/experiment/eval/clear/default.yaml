@@ -1,26 +1,13 @@
 # @package _global_
 
 defaults:
-  - /experiment/eval/mllm_eval/naming
-  - override /model: llava-1.5-7b-hf
+  - override /model: Qwen2.5-VL-3B-Instruct
   - override /eval: clear
-  - _self_
 
-ratio: 10
-eval_name: ${hydra:runtime.choices.eval}_ratio${ratio}
-checkpoint_path: null
-
-model:
-  adapter_path: ${checkpoint_path}
-  merge_adapter: true
-
-# CLEAR's source directories use zero-padded ratios.
-clear_forget_ratios:
-  "1": "01"
-  "5": "05"
-  "10": "10"
-forget_ratio: ${oc.select:clear_forget_ratios.${ratio}}
+forget_ratio: "10"
 
 eval:
   clear:
     forget_ratio: ${forget_ratio}
+
+task_name: clear_eval

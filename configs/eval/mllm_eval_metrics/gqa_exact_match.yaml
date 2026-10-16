@@ -1,9 +1,0 @@
-# @package eval.gqa.metrics.exact_match
-
-defaults:
-  - .@pre_compute.results: gqa
-
-handler: exact_match
-pre_compute:
-  results:
-    access_key: generation

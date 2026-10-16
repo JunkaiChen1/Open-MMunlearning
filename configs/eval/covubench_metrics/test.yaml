@@ -1,5 +1,0 @@
-# @package eval.covubench.metrics.test
-
-handler: covubench_split
-output: merge
-split: test

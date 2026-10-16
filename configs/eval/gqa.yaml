@@ -1,14 +1,8 @@
 # @package eval.gqa
 
-defaults:
-  - mllm_eval_metrics: gqa
-  - _self_
-
-metrics: {}
-
-handler: MLLMEvalEvaluator
+handler: MultimodalBenchmarkEvaluator
 output_dir: ${paths.output_dir}
-overwrite: true
+overwrite: false
 name: GQA-testdev-balanced
 benchmark: gqa
 format: parquet

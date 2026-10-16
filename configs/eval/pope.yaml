@@ -1,14 +1,8 @@
 # @package eval.pope
 
-defaults:
-  - mllm_eval_metrics: pope
-  - _self_
-
-metrics: {}
-
-handler: MLLMEvalEvaluator
+handler: MultimodalBenchmarkEvaluator
 output_dir: ${paths.output_dir}
-overwrite: true
+overwrite: false
 name: POPE
 benchmark: pope
 format: jsonl

@@ -1,14 +1,8 @@
 # @package eval.mmbench
 
-defaults:
-  - mllm_eval_metrics: mmbench
-  - _self_
-
-metrics: {}
-
-handler: MLLMEvalEvaluator
+handler: MultimodalBenchmarkEvaluator
 output_dir: ${paths.output_dir}
-overwrite: true
+overwrite: false
 name: MMBench
 benchmark: mmbench
 format: tsv

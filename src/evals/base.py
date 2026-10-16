@@ -1,113 +1,112 @@
-"""Configured metric execution and storage, following OpenUnlearning."""
+import os
+import json
+import logging
+from evals.metrics import get_metrics
 
-from evals.utils.storage import EvaluationLogs
+logger = logging.getLogger("evaluator")
 
 
-class Evaluator(EvaluationLogs):
+class Evaluator:
     def __init__(self, name, eval_cfg, **kwargs):
-        super().__init__(eval_cfg, name=name, **kwargs)
-        from evals.metrics import get_metrics
-
-        self.metrics_cfg = eval_cfg.get("metrics", {})
-        self.metrics = get_metrics(self.metrics_cfg)
-        self.metric_cache = {}
-        self.model = None
-
-    def metric_names(self, *, phase="evaluation", task=None, split=None):
-        """Select configured metrics in YAML order for a benchmark context."""
-        for name, config in self.metrics_cfg.items():
-            if config.get("phase", "evaluation") != phase:
-                continue
-            if config.get("task") is not None and config.get("task") != task:
-                continue
-            selected_split = config.get("split")
-            if selected_split is not None and selected_split != split:
-                continue
-            yield name
-
-    def evaluate_metric(self, name, *, model, cache, **kwargs):
-        arguments = {"protocol": self, **kwargs, **dict(self.metrics_cfg[name])}
-        return self.metrics[name](
-            model,
-            metric_name=name,
-            cache=cache,
-            **arguments,
+        self.name = name
+        self.eval_cfg = eval_cfg
+        self.metrics_cfg = self.eval_cfg.metrics
+        self.metrics = self.load_metrics(self.metrics_cfg)
+        logger.info(
+            f"Evaluations stored in the experiment directory: {self.eval_cfg.output_dir}"
         )
 
-    def evaluate_metrics(
-        self,
-        model,
-        *,
-        scope="default",
-        phase="evaluation",
-        task=None,
-        split=None,
-        cache=None,
-        **kwargs,
-    ):
-        """Execute every configured metric selected for this context."""
-        cache = self.metric_cache.setdefault(scope, {}) if cache is None else cache
-        if split is not None:
-            kwargs.setdefault("split", split)
-        for name in self.metric_names(phase=phase, task=task, split=split):
-            result = self.evaluate_metric(name, model=model, cache=cache, **kwargs)
-            yield name, result
+    def get_logs_file_path(self, output_dir, suffix="EVAL"):
+        """Returns the path to json file to store results"""
+        logs_filename = os.path.join(output_dir, f"{self.name}_{suffix}.json")
+        return logs_filename
 
-    def merge_metric_result(self, logs, name, result):
-        # Existing benchmark configurations retain their source log layout.
-        if self.metrics_cfg[name].get("output") == "merge":
-            logs.update(result.get("value_by_index", {}))
-        else:
-            logs[name] = result
+    def load_logs_from_file(self, file):
+        """Returns the cache of existing results"""
+        logs = {}
+        if os.path.exists(file):
+            logger.info(f"Loading existing evaluations from {file}")
+            with open(file, "r") as f:
+                logs = json.load(f)
+        return logs
 
-    def metric_summary(self, logs, prefix=""):
-        summary = {}
-        for name, result in logs.items():
-            if not isinstance(result, dict):
-                continue
-            key = f"{prefix}/{name}" if prefix else name
-            if name in self.metrics and "agg_value" in result:
-                if result["agg_value"] is not None:
-                    summary[key] = result["agg_value"]
-            elif name not in {"details", "value_by_index", "metadata"}:
-                summary.update(self.metric_summary(result, key))
-        return summary
+    def save_logs(self, logs, file):
+        """Save the logs in a json file"""
+        logs = dict(sorted(logs.items()))
+        os.makedirs(os.path.dirname(file), exist_ok=True)
+        try:
+            with open(file, "w") as f:
+                json.dump(logs, f, indent=4)
+        except Exception as e:
+            raise RuntimeError(f"Failed to save {file}: {e}")
+
+    def prepare_model(self, model):
+        """Prepare model for evaluation"""
+        model.eval()
+        return model
+
+    def load_metrics(self, metrics_cfg):
+        """Load metrics for evaluation"""
+        metrics = get_metrics(metrics_cfg)
+        return metrics
 
     def summarize(self, logs):
-        if not self.metrics:
-            return super().summarize(logs)
-        summary = {}
-        for name in self.metric_names(phase="summary"):
-            result = self.evaluate_metric(
-                name,
-                model=self.model,
-                cache={},
-                logs=logs,
-            )
-            summary.update(result.get("summary", {}))
-            if result.get("agg_value") is not None:
-                summary[name] = result["agg_value"]
-        summary.update(self.metric_summary(logs))
-        return summary
+        """Summarize the metrics results"""
+        metric_summary = {}
+        for metric_name, metric_results in logs.items():
+            if metric_name not in self.metrics:
+                continue
+            agg_value = metric_results.get("agg_value", None)
+            if agg_value is not None:
+                metric_summary[metric_name] = agg_value
+        return metric_summary
 
     def evaluate(self, model, output_dir=None, overwrite=None, **kwargs):
-        """Always recompute; overwrite is accepted for older callers only."""
-        self.metric_cache = {}
-        self.model = model
-        try:
-            implementation = getattr(self, "_evaluate", self._evaluate_metric_suite)
-            return implementation(model, output_dir, overwrite, **kwargs)
-        finally:
-            self.metric_cache = {}
-            self.model = None
+        # set flag to overwrite metrics
+        overwrite = self.eval_cfg.overwrite if overwrite is None else overwrite
 
-    def _evaluate_metric_suite(self, model, output_dir, overwrite, **kwargs):
+        # Prepare model for evaluation
         model = self.prepare_model(model)
-        output_dir = output_dir or self.eval_cfg.output_dir
-        logs_path = self.get_logs_file_path(output_dir)
-        summary_path = self.get_logs_file_path(output_dir, suffix="SUMMARY")
-        logs = {}
-        for _name, _result in self.evaluate_metrics(model, cache=logs, **kwargs):
-            self.save_logs(logs, logs_path)
-            self.save_logs(self.summarize(logs), summary_path)
+
+        # Set output_dir and file to store results
+        output_dir = output_dir if output_dir else self.eval_cfg.output_dir
+        logs_file_path = self.get_logs_file_path(output_dir)
+        summary_file_path = self.get_logs_file_path(output_dir, suffix="SUMMARY")
+
+        # Load existing results from file if any.
+        logs = self.load_logs_from_file(logs_file_path) if not overwrite else {}
+
+        logger.info(f"***** Running {self.name} evaluation suite *****")
+        logger.info(f"Fine-grained evaluations will be saved to: {logs_file_path}")
+        logger.info(
+            f"Aggregated evaluations will be summarised in: {summary_file_path}"
+        )
+        for metric_name, metric_fn in self.metrics.items():
+            if not overwrite and metric_name in logs and logs[metric_name]:
+                logger.info(f"Skipping {metric_name}, already evaluated.")
+                if "agg_value" in logs[metric_name]:
+                    logger.info(
+                        f"Result for metric {metric_name}:\t{logs[metric_name]['agg_value']}"
+                    )
+                self.save_logs(self.summarize(logs), summary_file_path)
+                continue
+            _ = logs.pop(metric_name, None)  # overwriting existing evals if present
+            kwargs = {
+                "tokenizer": kwargs.get("tokenizer", None),
+                "template_args": kwargs.get("template_args", None),
+            }
+            metrics_args = self.eval_cfg.metrics[metric_name]
+            _
+            result = metric_fn(
+                model,
+                metric_name=metric_name,
+                cache=logs,
+                **kwargs,
+                **metrics_args,
+            )
+            if "agg_value" in result:
+                logger.info(f"Result for metric {metric_name}:\t{result['agg_value']}")
+            self.save_logs(logs, logs_file_path)
+            self.save_logs(self.summarize(logs), summary_file_path)
+
         return self.summarize(logs)

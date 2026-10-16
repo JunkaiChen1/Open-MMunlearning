@@ -1,4 +1,0 @@
-# @package eval.fiubench.metrics.model_utility
-
-handler: fiubench_model_utility
-phase: summary

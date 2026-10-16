@@ -1,14 +1,7 @@
 # @package _global_
 
 defaults:
-  - /experiment/eval/mllm_eval/naming
   - override /model: llava-1.5-7b-hf
   - override /eval: mmbench
-  - _self_
 
-eval_name: mmbench
-checkpoint_path: null
-
-model:
-  adapter_path: ${checkpoint_path}
-  merge_adapter: true
+task_name: mmbench

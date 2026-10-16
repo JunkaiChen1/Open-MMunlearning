@@ -1,8 +1,0 @@
-# @package _global_
-
-eval_name: ${hydra:runtime.choices.eval}
-checkpoint_name: ${eval_checkpoint_name:${model.model_args.pretrained_model_name_or_path},${oc.select:model.adapter_path,null}}
-task_name: ${eval_name}_${model_name}_${checkpoint_name}
-
-paths:
-  output_dir: ${paths.root_dir}/saves/eval/${task_name}

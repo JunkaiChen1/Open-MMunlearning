@@ -1,9 +1,0 @@
-# @package _global_
-
-defaults:
-  - /experiment/eval/safeeraser/default
-  - /experiment/eval/unlearned
-  - _self_
-
-benchmark_name: safeeraser
-forget_split: forget

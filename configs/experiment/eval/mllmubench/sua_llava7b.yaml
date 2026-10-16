@@ -1,0 +1,17 @@
+# @package _global_
+
+defaults:
+  - override /model: LLaVA_Vanilla_7b
+  - override /eval: sua
+
+ratio: 10
+eval:
+  sua:
+    ratio: ${ratio}
+    split: forget
+    max_records: 48
+    sua:
+      iterations: 500
+      batch_size: 6
+
+task_name: sua_llava7b_mllmu

@@ -1,20 +1,10 @@
 # @package eval.clear
 
-defaults:
-  - clear_metrics:
-      - task_evaluation
-      - statistics
-      - model_utility
-      - forget_quality
-  - _self_
-
-metrics: {}
-
 handler: CLEAREvaluator
 output_dir: ${paths.output_dir}
-overwrite: true
+overwrite: false
 
-# Full CLEAR eval data copied under OpenUnlearning's eval data directory.
+# Full CLEAR eval data should be prepared under the configured data directory.
 data_root: ${paths.data_dir}/eval/clear
 forget_ratio: "10"
 forget_split: forget${eval.clear.forget_ratio}_perturbed
@@ -27,6 +17,9 @@ image_root: ${eval.clear.data_root}
 
 # Processor path normally matches the model tokenizer path.
 processor_path: ${model.tokenizer_args.pretrained_model_name_or_path}
+# Keep remote dataset code disabled by default. Enable only for a trusted
+# dataset revision that explicitly requires it.
+dataset_trust_remote_code: false
 model_family: null
 system_prompt: ${oc.select:model.template_args.system_prompt,null}
 # CLEAR/mm/eval.py unconditionally uses left padding for its processor.
@@ -52,11 +45,13 @@ generation_args:
   max_new_tokens: 300
   do_sample: false
 
-# CLEAR's official mm/eval.py does not report MIA scores. Keep the
-# optional LOSS/ZLIB and Min-K extensions disabled in the default protocol.
-generation_mia: false
+# Loss/ZLIB MIA on the teacher-forced ground-truth answer. Positive scores
+# match the shared MIA convention; FIUBench keeps its source-specific -1 sign.
+generation_mia: true
 generation_mia_sign: 1.0
-generation_mia_min_k: false
+# Standard Min-K attacks use the lowest 20% of teacher-forced answer tokens.
+# FIUBench's five-ratio weighted protocol is intentionally configured elsewhere.
+generation_mia_min_k: true
 generation_mia_min_k_ratio: 0.2
 
 max_length: 4096
@@ -81,16 +76,14 @@ auto_perturbations: false
 num_auto_perturbations: 5
 js_bins: 50
 seed: ${seed}
-# Optional detailed forget-set logs from a model trained only on the retain set.
-# Reference-dependent metrics are omitted until a log path is provided.
 retain_result: null
 eval_task_ids: null
 
 # QA-only evaluation from CLEAR's +tofu mixed splits. The source files live
-# outside OpenUnlearning's copied image-eval directory; override this path or
+# outside the prepared image-eval directory; override this path or
 # set pure_text_eval=false for another checkout.
 pure_text_eval: true
-pure_text_data_root: ${paths.data_dir}/source/clear
+pure_text_data_root: ${paths.data_dir}/external/clear
 # Set either path explicitly to override ratio-based split discovery.
 pure_text_forget_path: null
 pure_text_retain_path: null

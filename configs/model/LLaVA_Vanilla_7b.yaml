@@ -1,0 +1,13 @@
+model_handler: LlavaForConditionalGeneration
+model_args:
+  pretrained_model_name_or_path: "${oc.env:LLAVA_VANILLA_7B_MODEL,./models/LLaVA_Vanilla_7b}"
+  torch_dtype: float16
+tokenizer_args:
+  pretrained_model_name_or_path: "${oc.env:LLAVA_VANILLA_7B_MODEL,./models/LLaVA_Vanilla_7b}"
+template_args:
+  apply_chat_template: true
+  system_prompt: ""
+  user_start_tag: "USER: "
+  user_end_tag: " "
+  asst_start_tag: "ASSISTANT: "
+  asst_end_tag: " "

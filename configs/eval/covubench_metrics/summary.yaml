@@ -1,4 +1,0 @@
-# @package eval.covubench.metrics.summary
-
-handler: covubench_summary
-phase: summary

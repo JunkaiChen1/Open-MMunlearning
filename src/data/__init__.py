@@ -6,6 +6,7 @@ from data.qa import (
     QAwithIdkDataset,
     QAwithAlternateDataset,
     ImageQADataset,
+    UMUBenchQADataset,
 )
 from data.collators import (
     DataCollatorForSupervisedDataset,
@@ -99,6 +100,7 @@ def get_collators(collator_cfgs, **kwargs):
 # Register datasets
 _register_data(QADataset)
 _register_data(ImageQADataset)
+_register_data(UMUBenchQADataset)
 _register_data(QAwithIdkDataset)
 _register_data(PretrainingDataset)
 _register_data(CompletionDataset)

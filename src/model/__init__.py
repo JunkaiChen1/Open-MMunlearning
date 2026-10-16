@@ -359,9 +359,8 @@ def _apply_manu_masks(model, masks: Dict[str, torch.Tensor]) -> int:
 
 
 def _load_manu_artifact(model, artifact_dir: Path, config: Dict[str, Any]):
-    if config["source_adapter_path"] is not None:
-        source_adapter = _artifact_path(artifact_dir, config["source_adapter_path"])
-        model = load_merged_peft_adapter(model, source_adapter)
+    source_adapter = _artifact_path(artifact_dir, config["source_adapter_path"])
+    model = load_merged_peft_adapter(model, source_adapter)
     masks_path = _artifact_path(artifact_dir, config["masks_path"])
     masks = torch.load(masks_path, map_location="cpu", weights_only=True)
     applied = _apply_manu_masks(model, masks)
@@ -389,9 +388,8 @@ def _load_smfa_artifact(model, artifact_dir: Path, config: Dict[str, Any]):
     from peft import PeftModel
     from peft.tuners.lora import Linear as LoraLinear
 
-    if config["source_adapter_path"] is not None:
-        source_adapter = _artifact_path(artifact_dir, config["source_adapter_path"])
-        model = load_merged_peft_adapter(model, source_adapter)
+    source_adapter = _artifact_path(artifact_dir, config["source_adapter_path"])
+    model = load_merged_peft_adapter(model, source_adapter)
     adapters = tuple(config["adapters"])
     if len(adapters) != 3 or len(set(adapters)) != 3:
         raise ValueError("SMFA artifact must contain three distinct adapters")
@@ -457,21 +455,6 @@ def load_unlearning_artifact(model, artifact_path):
         return _load_manu_artifact(model, artifact_dir, config)
     if artifact_type == "smfa":
         return _load_smfa_artifact(model, artifact_dir, config)
-    if artifact_type == "mip_editor":
-        from model.mip_editor import apply_row_edits, install_path_hooks
-
-        if config["source_adapter_path"] is not None:
-            source = _artifact_path(artifact_dir, config["source_adapter_path"])
-            model = load_merged_peft_adapter(model, source)
-        edits = torch.load(
-            _artifact_path(artifact_dir, config["edits_path"]),
-            map_location="cpu",
-            weights_only=True,
-        )
-        apply_row_edits(model, edits["rows"])
-        install_path_hooks(model, edits["paths"])
-        logger.info("Applied MIP-Editor row edits and token paths from %s", artifact_dir)
-        return model
     raise ValueError(f"Unsupported unlearning artifact type: {artifact_type!r}")
 
 
@@ -479,10 +462,8 @@ def get_model(model_cfg: DictConfig, peft_cfg=None):
     assert model_cfg is not None and model_cfg.model_args is not None, ValueError(
         "Model config not found or model_args absent in configs/model."
     )
-    # Resolve shared paths before consuming loader arguments; keep the original
-    # config intact for processor paths used by collators and evaluators.
-    model_args = OmegaConf.create(OmegaConf.to_container(model_cfg.model_args, resolve=True))
-    tokenizer_args = OmegaConf.create(OmegaConf.to_container(model_cfg.tokenizer_args, resolve=True))
+    model_args = model_cfg.model_args
+    tokenizer_args = model_cfg.tokenizer_args
     adapter_path = model_cfg.get("adapter_path", None)
     merge_adapter = model_cfg.get("merge_adapter", False)
     torch_dtype = get_dtype(model_args)

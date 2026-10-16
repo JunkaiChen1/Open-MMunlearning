@@ -1,10 +1,10 @@
 model_handler: Gemma3ForConditionalGeneration
 model_args:
-  pretrained_model_name_or_path: "${oc.env:MMU_MODEL_ROOT,google}/gemma-3-4b-it"
+  pretrained_model_name_or_path: "google/gemma-3-4b-it"
   attn_implementation: eager
   torch_dtype: bfloat16
 tokenizer_args:
-  pretrained_model_name_or_path: ${model.model_args.pretrained_model_name_or_path}
+  pretrained_model_name_or_path: "google/gemma-3-4b-it"
 template_args:
   apply_chat_template: true
   system_prompt: ""

@@ -1,8 +1,0 @@
-# @package _global_
-
-defaults:
-  - /experiment/eval/fiubench/default
-  - /experiment/eval/unlearned
-  - _self_
-
-benchmark_name: fiubench

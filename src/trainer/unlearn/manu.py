@@ -197,6 +197,8 @@ class MANU(UnlearnTrainer):
         self.language_layers = tuple(language_layers or (-3, -2, -1))
         self.validate_after_pruning = validate_after_pruning
         self.source_adapter_path = source_adapter_path
+        if not self.source_adapter_path:
+            raise ValueError("MANU requires source_adapter_path for reloadable output")
         self._applied_masks = {}
 
     def _analysis_loader(self, dataset):
@@ -551,11 +553,7 @@ class MANU(UnlearnTrainer):
             artifact = {
                 "version": 1,
                 "type": "manu",
-                "source_adapter_path": (
-                    str(Path(self.source_adapter_path).resolve())
-                    if self.source_adapter_path is not None
-                    else None
-                ),
+                "source_adapter_path": str(Path(self.source_adapter_path).resolve()),
                 "masks_path": masks_path.name,
             }
             with (output_dir / "unlearning_artifact.json").open(

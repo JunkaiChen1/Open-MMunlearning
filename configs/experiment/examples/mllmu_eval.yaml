@@ -1,9 +1,0 @@
-# @package _global_
-
-defaults:
-  - /experiment/eval/mllmu/unlearned
-  - override /model: llava-1.5-7b-hf
-  - override /trainer: GradAscent
-  - _self_
-
-ratio: 10

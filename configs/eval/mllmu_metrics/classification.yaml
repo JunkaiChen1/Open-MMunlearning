@@ -1,5 +1,0 @@
-# @package eval.mllmu.metrics.classification
-
-handler: mllmu_classification
-task: classification
-output: merge
