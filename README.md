@@ -1,10 +1,8 @@
-<p align="center">
-  <img src="open-mmunlearning-v2.png" alt="Open-MMUnlearning: Unifying Methods and Evaluation for MLLM Unlearning" width="100%" />
-</p>
-
 <!-- Open-MMUnlearning 项目横幅：统一多模态大语言模型遗忘方法与评估。 -->
 
 <p align="center">
+  <img src="open-mmunlearning-v2.png?v=eb67aefcd0" alt="Open-MMUnlearning: Unifying Methods and Evaluation for MLLM Unlearning" width="100%" />
+  <br />
   <a href="https://arxiv.org/abs/2610.10358"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b?logo=arxiv&amp;logoColor=white" alt="arXiv Paper" /></a>
   <a href="https://github.com/JunkaiChen1/Open-MMunlearning/stargazers"><img src="https://img.shields.io/github/stars/JunkaiChen1/Open-MMunlearning?style=social" alt="GitHub Repo stars" /></a>
   <a href="https://github.com/JunkaiChen1/Open-MMunlearning"><img src="https://img.shields.io/github/repo-size/JunkaiChen1/Open-MMunlearning" alt="GitHub repo size" /></a>
