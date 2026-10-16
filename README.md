@@ -24,11 +24,11 @@ Following [Table 1 of the paper](https://arxiv.org/html/2610.10358v2#S3.T1), the
 
 <!-- 下表参考论文表 1，列出当前仓库支持的模型、遗忘方法和数据集。 -->
 
-| Component | Category | Available variants |
-| --- | --- | --- |
-| Models | Multimodal backbones | LLaVA-1.5, LLaVA-1.6, Qwen2.5-VL, Gemma 3 |
-| Methods | Unlearning | GradAscent, GradDiff, KL (`kl`), RMU, NPO, UNDIAL, MMUnlearner, MANU, MIP-Editor (`MIPEditor`), SMFA |
-| Datasets | Privacy, safety, copyright | MLLMU-Bench, FIUBench, CLEAR, SafeEraser, CoVUBench |
+| Component | Available variants |
+| --- | --- |
+| Models | LLaVA-1.5, LLaVA-1.6, Qwen2.5-VL, Gemma 3 |
+| Methods | GradAscent, GradDiff, KL (`kl`), RMU, NPO, UNDIAL, MMUnlearner, MANU, MIP-Editor (`MIPEditor`), SMFA |
+| Datasets | MLLMU-Bench, FIUBench, CLEAR, SafeEraser, CoVUBench |
 
 <!-- 模型包括 LLaVA-1.5、LLaVA-1.6、Qwen2.5-VL 和 Gemma 3；十种遗忘方法统一列出；数据集覆盖隐私、安全与版权。 -->
 
