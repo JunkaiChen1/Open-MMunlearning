@@ -20,22 +20,17 @@ OpenMMUnlearning provides a unified, extensible framework for multimodal large l
 
 ## 🧩 Available Components
 
-Following [Table 1 of the paper](https://arxiv.org/html/2610.10358v2#S3.T1), the table groups components and evaluation dimensions while listing the implementations available in this repository.
+Following [Table 1 of the paper](https://arxiv.org/html/2610.10358v2#S3.T1), the table lists the models, unlearning methods, and datasets available in this repository.
 
-<!-- 下表参考论文表 1，按组件和评估维度组织，具体条目以当前仓库已有实现为准。 -->
+<!-- 下表参考论文表 1，列出当前仓库支持的模型、遗忘方法和数据集。 -->
 
 | Component | Category | Available variants |
 | --- | --- | --- |
 | Models | Multimodal backbones | LLaVA-1.5, LLaVA-1.6, Qwen2.5-VL, Gemma 3 |
-| Methods | General unlearning | GradAscent, GradDiff, KL (`kl`), RMU, NPO, UNDIAL |
-| Methods | Multimodal unlearning | MMUnlearner, MANU, MIP-Editor (`MIPEditor`), SMFA |
+| Methods | Unlearning | GradAscent, GradDiff, KL (`kl`), RMU, NPO, UNDIAL, MMUnlearner, MANU, MIP-Editor (`MIPEditor`), SMFA |
 | Datasets | Privacy, safety, copyright | MLLMU-Bench, FIUBench, CLEAR, SafeEraser, CoVUBench |
-| Metrics | Forget | Fill-in-the-Blank Accuracy, Classification Accuracy, Exact Match / APE, ROUGE-1/2/L, BLEU, Answer Probability, Truth Ratio, KS-Test, JS Distance, Forget Quality, Keyword Recall, Semantic Dissimilarity, Efficacy, Divergence, ASR, RR |
-| Metrics | Utility | Model Utility, GPT-Eval, SARR, general multimodal evaluation |
-| Metrics | Robust | LOSS, ZLib, GradNorm, Min-K%, Min-K%++, Reference Loss, pure-text jailbreak, FigStep, image rephrasing, SUA |
-| General evaluation | Multimodal capabilities | POPE, MM-Vet, MMBench, VizWiz, ScienceQA, GQA, VQAv2 |
 
-<!-- 模型包括 LLaVA-1.5、LLaVA-1.6、Qwen2.5-VL 和 Gemma 3；方法分为六种通用方法和四种多模态方法；数据集覆盖隐私、安全与版权。指标沿用论文的 Forget（遗忘）、Utility（效用）、Robust（鲁棒性）三类：分别包含任务与分布指标、安全性指标、效用与裁判评分，以及成员推断和对抗输入攻击。通用多模态评估包括 POPE、MM-Vet、MMBench、VizWiz、ScienceQA、GQA、VQAv2。 -->
+<!-- 模型包括 LLaVA-1.5、LLaVA-1.6、Qwen2.5-VL 和 Gemma 3；十种遗忘方法统一列出；数据集覆盖隐私、安全与版权。 -->
 
 ## 📑 Contents
 
