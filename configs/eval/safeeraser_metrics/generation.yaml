@@ -1,0 +1,3 @@
+# @package eval.safeeraser.metrics.generation
+
+handler: safeeraser_generation

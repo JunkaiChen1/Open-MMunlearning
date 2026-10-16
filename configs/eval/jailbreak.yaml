@@ -2,7 +2,7 @@
 
 handler: JailbreakAttackEvaluator
 output_dir: ${paths.output_dir}
-overwrite: false
+overwrite: true
 
 data_root: ${paths.data_dir}/eval/mllmu
 split: forget

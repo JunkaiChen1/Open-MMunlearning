@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /experiment/eval/gqa/default
+  - /eval/mllm_eval_metrics: gqa_exact_match
+  - _self_

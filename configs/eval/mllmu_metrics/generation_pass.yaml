@@ -1,0 +1,4 @@
+# @package eval.mllmu.metrics.generation_pass
+
+handler: mllmu_generation_pass
+output: merge

@@ -1,0 +1,5 @@
+# @package eval.covubench.metrics.forget
+
+handler: covubench_split
+output: merge
+split: forget

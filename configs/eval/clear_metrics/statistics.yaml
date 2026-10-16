@@ -1,0 +1,4 @@
+# @package eval.clear.metrics.statistics
+
+handler: clear_statistics
+phase: summary

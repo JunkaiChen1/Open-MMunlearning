@@ -1,0 +1,5 @@
+# @package eval.mllmu.metrics.fill_in_the_blank
+
+handler: mllmu_fill_in_the_blank
+task: fill_in_the_blank
+output: merge

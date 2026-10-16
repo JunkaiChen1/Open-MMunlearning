@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /experiment/unlearn/mllmu/default
+  - /experiment/unlearn/mip_editor
+  - _self_

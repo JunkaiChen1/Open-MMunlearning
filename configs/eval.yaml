@@ -13,5 +13,6 @@ model:
     device_map: cuda
 
 mode: eval
+model_name: ${hydra:runtime.choices.model}
 task_name: ???
 seed: 0

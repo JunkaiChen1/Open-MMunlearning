@@ -1,7 +1,14 @@
 # @package _global_
 
 defaults:
+  - /experiment/eval/mllm_eval/naming
   - override /model: llava-1.5-7b-hf
   - override /eval: pope
+  - _self_
 
-task_name: pope
+eval_name: pope
+checkpoint_path: null
+
+model:
+  adapter_path: ${checkpoint_path}
+  merge_adapter: true

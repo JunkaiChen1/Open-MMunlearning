@@ -1,6 +1,6 @@
-from typing import Dict, Any
 import importlib
 import logging
+from typing import Any, Dict
 
 from omegaconf import DictConfig
 
@@ -54,15 +54,16 @@ def _register_evaluator_from_module(module_name, evaluator_class_name):
 # Register benchmark evaluators. Import failures are deferred so one benchmark's
 # optional dependencies do not prevent running another benchmark.
 for _module_name, _evaluator_class_name in (
-    ("evals.lm_eval", "LMEvalEvaluator"),
     ("evals.mllmu", "MLLMUBenchEvaluator"),
     ("evals.fiubench", "FIUBenchEvaluator"),
     ("evals.clear", "CLEAREvaluator"),
     ("evals.covubench", "CoVUBenchEvaluator"),
-    ("evals.sua", "SUAAttackEvaluator"),
-    ("evals.figstep", "FigStepAttackEvaluator"),
-    ("evals.image_rephrase", "ImageRephraseAttackEvaluator"),
-    ("evals.jailbreak", "JailbreakAttackEvaluator"),
-    ("evals.multimodal_benchmarks", "MultimodalBenchmarkEvaluator"),
+    ("evals.metrics.sua", "SUAAttackEvaluator"),
+    ("evals.metrics.figstep", "FigStepAttackEvaluator"),
+    ("evals.metrics.image_rephrase", "ImageRephraseAttackEvaluator"),
+    ("evals.metrics.jailbreak", "JailbreakAttackEvaluator"),
+    ("evals.mllm_eval", "MLLMEvalEvaluator"),
+    ("evals.safeeraser", "SafeEraserEvaluator"),
+    ("evals.metrics.mia_auc", "MIAEvaluator"),
 ):
     _register_evaluator_from_module(_module_name, _evaluator_class_name)

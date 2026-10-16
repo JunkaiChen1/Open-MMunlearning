@@ -1,0 +1,5 @@
+# @package eval.mllmu.metrics.generation_distribution
+
+handler: mllmu_generation_distribution
+output: merge
+phase: final

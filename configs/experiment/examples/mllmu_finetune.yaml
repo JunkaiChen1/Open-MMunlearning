@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /experiment/finetune/mllmu/default
+  - override /model: llava-1.5-7b-hf
+  - _self_

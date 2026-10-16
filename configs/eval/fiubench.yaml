@@ -1,17 +1,26 @@
 # @package eval.fiubench
 
+defaults:
+  - fiubench_metrics:
+      - task_evaluation
+      - statistics
+      - model_utility
+      - forget_quality
+  - _self_
+
+metrics: {}
+
 handler: FIUBenchEvaluator
 output_dir: ${paths.output_dir}
-overwrite: false
+overwrite: true
 
-# Original FIUBench JSONL layout copied under this directory. The upstream
-# split is kept separately because the local unlearning-preparation split uses
-# a different ratio convention.
-data_root: ${paths.data_dir}/eval/fiubench
+# Original FIUBench JSONL and image layout from the public dataset release.
+# Its upstream retain10 split is distinct from the retain_90 training split.
+data_root: ${paths.data_dir}/source/fiubench
 data_path:
   - ${eval.fiubench.data_root}/full.json
   - ${eval.fiubench.data_root}/full.json
-split_path: ${eval.fiubench.data_root}/upstream_split.json
+split_path: ${eval.fiubench.data_root}/split.json
 image_root: ${eval.fiubench.data_root}
 
 # Processor path normally matches the model tokenizer path.
@@ -29,7 +38,7 @@ image_token: "<image>"
 
 # The upstream evaluator selects explicit entries from split.json. `retain5`
 # is not a generated complement of `forget5`.
-ratio: 5
+ratio: 10
 forget_split: forget${eval.fiubench.ratio}
 retain_split: retain${eval.fiubench.ratio}
 split_list:
@@ -79,6 +88,16 @@ save_generated_text: true
 ape_only: true
 normalize_gt: null
 enable_gpt: false
+# Used only when gpt is selected in robust_eval and enable_gpt=true.
+# These defaults match evaluate_util.py's inline GPT evaluator.
+judge:
+  base_url: ${oc.env:FIUBENCH_API_BASE,https://api.openai.com/v1}
+  model: ${oc.env:FIUBENCH_JUDGE_MODEL,gpt-4o-mini}
+  api_key_env: FIUBENCH_API_KEY
+  max_tokens: 20
+  timeout: 30
+  retries: 3
+  retry_delay: 1
 
 # Use the source LLaVA tokenizer/CLIP path and source `preprocess_v1` label
 # masking for the upstream LLaVA-Phi model. Standard Hugging Face LLaVA
@@ -87,4 +106,6 @@ enable_gpt: false
 upstream_compatibility: true
 upstream_llava_io: null
 allow_generated_retain_split: false
+# Optional detailed forget-set logs from a model trained only on the retain set.
+# Reference-dependent metrics are omitted until a log path is provided.
 retain_result: null

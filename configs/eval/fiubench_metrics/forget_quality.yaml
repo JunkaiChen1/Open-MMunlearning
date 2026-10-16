@@ -1,0 +1,7 @@
+# @package eval.fiubench.metrics.forget_quality
+
+handler: fiubench_forget_quality
+phase: summary
+reference_logs:
+  retain_model_logs:
+    path: ${eval.fiubench.retain_result}

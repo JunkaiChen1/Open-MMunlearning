@@ -12,6 +12,8 @@ args:
   report_to: tensorboard
   ddp_find_unused_parameters: None
   gradient_checkpointing: False
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
   optim: paged_adamw_32bit
   save_strategy: 'no'
   save_only_model: True

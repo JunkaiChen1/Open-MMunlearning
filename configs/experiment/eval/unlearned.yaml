@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - /trainer: GradAscent
+  - _self_
+
+benchmark_name: mllmu
+method_name: ${trainer.handler}
+forget_split: forget_${ratio}
+source_task_name: ${benchmark_name}_${model_name}_${forget_split}_${method_name}
+checkpoint_path: ${paths.root_dir}/saves/unlearn/${source_task_name}
+task_name: ${source_task_name}
+
+model:
+  adapter_path: ${checkpoint_path}
+  merge_adapter: true
+
+paths:
+  output_dir: ${checkpoint_path}/evals

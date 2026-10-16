@@ -11,6 +11,7 @@ defaults:
   - experiment: null
 
 mode: train
+model_name: ${hydra:runtime.choices.model}
 task_name: ???
 
 compat:

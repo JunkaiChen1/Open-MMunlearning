@@ -1,6 +1,5 @@
-# Reusable reference values for the open-mmunlearning quantization stress test.
-# Add these fields below a model config as `model.quantization`, or use
-# scripts/quantization_stress_test.py which injects them automatically.
+# Optional 4-bit model loading settings. Add these fields below a model config
+# as `model.quantization` when using the standard train or eval entry point.
 enabled: true
 bits: 4
 quant_type: nf4

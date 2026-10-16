@@ -1,7 +1,14 @@
 # @package _global_
 
 defaults:
+  - /experiment/eval/mllm_eval/naming
   - override /model: llava-1.5-7b-hf
   - override /eval: scienceqa
+  - _self_
 
-task_name: scienceqa_val
+eval_name: scienceqa_val
+checkpoint_path: null
+
+model:
+  adapter_path: ${checkpoint_path}
+  merge_adapter: true

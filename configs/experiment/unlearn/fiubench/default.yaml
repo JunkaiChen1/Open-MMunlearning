@@ -12,6 +12,11 @@ defaults:
 
 mode: unlearn
 
+stage1_task_name: fiubench_${model_name}_full
+
+model:
+  adapter_path: ${paths.root_dir}/saves/finetune/${stage1_task_name}
+
 fiubench_data_dir: ${paths.data_dir}/unlearn/fiubench
 forget_split: forget_10
 retain_split: retain_90
@@ -21,6 +26,7 @@ data:
   forget:
     FIUBENCH_QA_forget:
       args:
+        idk_path: ${oc.select:forget_idk_path,null}
         hf_args:
           data_files: ${fiubench_data_dir}/${forget_split}/train-00000-of-00001.parquet
   retain:
@@ -66,4 +72,4 @@ peft:
   module_preset: all
 
 eval: null
-task_name: fiubench_unlearn_default
+task_name: fiubench_${model_name}_${forget_split}_${method_name}
